@@ -11,9 +11,10 @@
 #-------------------------------------------------------------------------------
 #$ name:markman|mark
 #$ author:qodeninja
-#$ autobuild: 00008
+#$ autobuild: 00009
 #$ date:
 # TODO: backup and restore key=>value pairs 
+# TODO: use special chars for commands to allow for flag options
 #-------------------------------------------------------------------------------
 #=====================================code!=====================================
 #-------------------------------------------------------------------------------
@@ -238,10 +239,6 @@ EOF
 
   linker(){
     local lbl=$1 ref dest=$2;
-
-    stderr "linker dest is $dest"
-    stderr "linker abs dest is $(abs $dest)"
-
     ref="$MY_MARK/$lbl";
     [ ! -L "$ref" ] && {
       ln -s "$dest" "$ref"; #using logical pwd
@@ -262,13 +259,12 @@ EOF
   mark_item(){
     local dest lbl="$1" sym ref res ret=0;
 
+
     if [ $# -gt 0 ]; then
       [ $# -eq 1 -a -n "$1" ] && dest=$(logical_pwd) || ret=1;
       [ $# -gt 1 -a -e "$2" ] && dest="$2"  || ret=1;
 
       ref="$MY_MARK/$lbl"
-
-      stderr "dest is $dest"
 
       [ $do_edit -eq 0 ] && do_unmark=0;
       [ ! -e "$ref" -a -L "$ref" ] && do_unmark=0 && stderr "${orange}Link doesnt exist... deleting mark (${imark}$lbl)";
@@ -364,6 +360,7 @@ EOF
     }
     alias marks='mark @';
     alias rem='mark -e last';
+    alias lastuser=\$(which last); # /usr/bin/last last logged in user 
     alias last='clear; jump last';
     alias j='jump';
     alias m='mark';

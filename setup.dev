@@ -1,0 +1,253 @@
+#!/usr/bin/env bash
+
+# note: FXI_ prefix implies setup variables formally FX_INIT_*
+# note: sourcing include.sh automatically includes stderr.sh
+
+
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+
+# source "./setup.conf"; <--configurations would go here
+if [ -n "$NO_COLOR" ]; then
+  _red=
+  _blue=
+  _gold=
+  _green=
+  _reset=
+else
+  _red="\x1B[31m";
+  _blue="\x1B[38;5;39m";
+  _gold="\x1B[38;5;220m";
+  _green="\x1B[32m";
+  _reset="\x1B[0m";
+fi
+#-------------------------------------------------------------------------------
+
+# Finds the user's canonical shell profile file (.profile or .bash_profile).
+# It resolves symlinks to find the true file path.
+fx_canonical_profile() {
+  local BASH_PROFILE LAST_BASH_PROFILE;
+
+  if [ -f "$HOME/.profile" ]; then
+    BASH_PROFILE="$HOME/.profile";
+  else
+    BASH_PROFILE="$HOME/.bash_profile";
+  fi
+
+  if [ -L "$BASH_PROFILE" ]; then
+    LAST_BASH_PROFILE="$BASH_PROFILE" #origin if linked
+    if command -v realpath >/dev/null 2>&1; then
+      BASH_PROFILE=$(realpath --logical "$BASH_PROFILE");
+    else
+      # Fallback if realpath is not available (macOS, older systems).
+      # This may not fully resolve symlinks in all cases, but it's better than nothing.
+      # warn "realpath not found. Profile path may not be fully resolved."
+      # Use `readlink` if available as a slightly better alternative to just echoing
+      command -v readlink >/dev/null 2>&1 && BASH_PROFILE=$(readlink "$BASH_PROFILE") || :
+    fi
+  fi
+
+  echo "$BASH_PROFILE"
+}
+
+#-------------------------------------------------------------------------------
+
+
+# Generates the .fxsetuprc file with dynamic paths and helper aliases.
+# This file establishes the initial development environment.
+# @param $1 - The absolute path where the RC file should be created.
+fx_setuprc(){
+  local src=$1;
+  [ -z $src ] && return 1;
+cat > "$src" << EOF
+#!/usr/bin/env bash
+
+  export FXI_SETUP_RC="$src";
+  export FXI_ROOT_DIR="$FXI_ROOT_DIR";
+  export FXI_BIN_DIR="\$FXI_ROOT_DIR/bin";
+  export FXI_PKG_DIR="\$FXI_ROOT_DIR/pkgs";
+  export FXI_INC_DIR="\$FXI_ROOT_DIR/pkgs/inc";
+
+  if [[ ":\$PATH:" != *":\$FXI_BIN_DIR:"* ]]; then
+      export PATH="\$PATH:\$FXI_BIN_DIR"
+      printf "... added BashFX (fx) project bin to path\n";
+  fi
+
+  # helper aliases
+  alias fxi="devfx";
+  alias fxinstall="fxi install";
+  alias fxsetup="source $FXI_ROOT_DIR/setup.dev";
+  alias fxdel="fxsetup reset";
+  alias fxhelp="fxi help";
+
+  [[ -z "\$FX_STAT"  ]] && fxsetup;
+
+EOF
+
+  [ -f "$src" ] && return 0;
+  return 1;
+}
+#-------------------------------------------------------------------------------
+
+
+# Dumps the content of the existing .fxsetuprc file to stdout.
+fx_setuprc_dump(){
+  if [ -f "$FXI_SETUP_RC" ]; then
+    cat "$FXI_SETUP_RC";
+    return 0;
+  else
+    printf "${_red}Error loading generated RC file (%s)\n${_reset}" $FXI_SETUP_RC;
+  fi
+}
+
+#-------------------------------------------------------------------------------
+
+# Checks if the user's profile file contains the source line for .fxsetuprc.
+fx_has_link(){
+  local _line="source \"$FXI_SETUP_RC\";";
+  grep -qF "$_line" "$PROFILE";
+}
+
+#-------------------------------------------------------------------------------
+
+
+# Checks if the setup is complete (i.e., the RC file exists and is linked).
+fx_ready(){
+  if fx_has_link; then
+    [ -f "$FXI_SETUP_RC" ] && return 0;  
+  fi
+  return 1;
+}
+
+#-------------------------------------------------------------------------------
+
+# Initializes the development environment by creating the .fxsetuprc file
+# and linking it to the user's profile.
+fx_init(){
+  printf "${_green}BashFX setup ...${_reset}\n";
+
+  local res ret _line; 
+  
+
+  #init path is based on repo root, do not edit
+  FXI_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && echo "$PWD")";
+  FXI_SETUP_RC="${FXI_ROOT_DIR}/.fxsetuprc";
+
+  fx_setuprc "$FXI_SETUP_RC"; ret=$?;
+  
+  if [ $ret -eq 0 ]; then
+    _line="source \"$FXI_SETUP_RC\";"
+    grep -qF "$_line" "$PROFILE" || echo "$_line" >> "$PROFILE";
+
+    #load vars defined in .fxsetuprc
+    if [ -f $FXI_SETUP_RC ]; then
+      FX_STAT='start';source $FXI_SETUP_RC;
+      printf "${_green}Done...${_reset}\n";
+      return 0;
+    else
+      printf "${_red}Error loading generated RC file (%s)\n${_reset}" $FXI_SETUP_RC;
+    fi
+  else
+    printf "${_red}Error creating RC file (%s)\n${_reset}" $FXI_SETUP_RC;
+  fi
+
+  return 1;
+}
+
+#-------------------------------------------------------------------------------
+
+
+# Removes the development environment setup by deleting the .fxsetuprc file,
+# removing the source line from the profile, and unsetting env vars/aliases.
+fx_uninstall(){
+  local res ret _line; 
+  printf "${_red}Removing BashFX setup ...${_reset}\n";
+  
+  _line="source \"$FXI_SETUP_RC\";"
+  sed -i.bak "\|^$_line\$|d" "$PROFILE";
+  [ -f $PROFILE.bak ] && rm "$PROFILE.bak";
+
+  for f in $(env | sed -n 's/^\([^=]*\)=.*/\1/p' | grep '^FX'); do
+    unset "$f"
+  done
+  for f in $(declare -F | awk '{print $3}' | grep '^fx_'); do
+    unset -f "$f"
+  done
+  unset _red _blue _green _reset;
+  for f in $(alias | sed -n "s/^alias \([^=]*\)=.*/\1/p" | grep '^fx'); do
+    unalias "$f" 2>/dev/null
+  done
+  if [ -f "$FXI_SETUP_RC" ]; then
+    rm "$FXI_SETUP_RC";
+  fi
+};
+
+#-------------------------------------------------------------------------------
+
+# Displays status and contextual next steps to the user, guiding them on
+# how to proceed with setup or use the available aliases.
+fx_next(){
+  if fx_ready; then
+    printf "\nBashFX (fx) is ready for installation!\n";
+    printf "Use [${_blue}fxinstall${_reset}] to complete. \n\n";
+    printf "Aditional Command aliases: \n\n";
+    printf "${_green}fxdel${_reset}  : remove/uninstall BashFX setup. \n";
+    printf "${_green}fxhelp${_reset} : see more commands. \n";
+    printf "${_green}fxi${_reset}    : advanced/dev utils. \n";
+  else 
+    printf "\nRun '${_blue}source setup.dev init${_reset}' in the project root to setup BashFX.\n\nOther commands: '${_blue}init reset check link rc${_reset}'";
+  fi
+}
+
+#-------------------------------------------------------------------------------
+
+# Main entry point and command dispatcher for the script.
+# It parses arguments and calls the appropriate setup/utility function.
+fx_main(){
+  local arg FX_STAT;
+
+  PROFILE=$(fx_canonical_profile);
+
+
+  if [ ! -f "$PROFILE" ]; then
+    printf "${_red}Error! canonical bash profile missing (path:%b)\n${_reset}" $PROFILE;
+    return 1;
+  fi
+
+
+  if [ "$#" -eq 0 ]; then
+    fx_next;
+    return 0;
+  fi
+
+  if [ -f "$FXI_SETUP_RC" ]; then
+    FX_STAT='reload'; source $FXI_SETUP_RC;
+  fi
+
+
+  for arg in "$@"; do
+    case "$arg" in
+     (res|reset)  fx_uninstall; return 0;;
+     (rc)  fx_setuprc; return 0;;
+     (dumprc)    fx_setuprc_dump; return 0;;
+     (link)  fx_has_link; return 0;;
+     (init)  fx_init; return 0;;
+     *)    
+      printf "${_red}Unknown command ($arg)${_reset}\n";
+      return 1;;
+    esac
+
+  done
+}
+
+fx_main "$@";
+
+#-------------------------------------------------------------------------------
+# cleanup
+for f in $(declare -F | awk '{print $2}' | grep '^fx_'); do
+  unset -f "$f"
+done
+unset _red _blue _green _reset _gold FX_STAT
+
+#-------------------------------------------------------------------------------

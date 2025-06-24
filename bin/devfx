@@ -1,0 +1,497 @@
+#!/usr/bin/env bash
+#===============================================================================
+# 
+#  ________  ________  ________  ___  ___  ________ ___    ___ 
+# |\   __  \|\   __  \|\   ____\|\  \|\  \|\  _____\\  \  /  /|
+# \ \  \|\ /\ \  \|\  \ \  \___|\ \  \\\  \ \  \__/\ \  \/  / /
+#  \ \   __  \ \   __  \ \_____  \ \   __  \ \   __\\ \    / / 
+#   \ \  \|\  \ \  \ \  \|____|\  \ \  \ \  \ \  \_| /     \/  
+#    \ \_______\ \__\ \__\____\_\  \ \__\ \__\ \__\ /  /\   \  
+#     \|_______|\|__|\|__|\_________\|__|\|__|\|__|/__/ /\ __\ 
+#                        \|_________|              |__|/ \|__| 
+#                                    
+#===============================================================================
+#-------------------------------------------------------------------------------
+#$ name: fx
+#$ author:qodeninja
+#$ date:
+#$ semver:
+#$ autobuild: 00010
+#-------------------------------------------------------------------------------
+#=====================================code!=====================================
+
+
+  
+  SELF_PATH="$0";
+
+
+  if [ -n "$FX_INC_DIR" ]; then
+    ___="$FX_INC_DIR"; #fx
+  else
+    if [ -z "$FXI_INC_DIR" ]; then
+      #missing !
+      printf "BashFX Setup incomplete, missing include directory!";
+      exit 1;
+    else
+      ___="$FXI_INC_DIR/include.sh"; #init
+    fi
+  fi
+  source "$___";
+  unset ___;
+
+
+  fx_var_list=(FX_BIN FX_LIB FX_ETC FX_DATA FX_STATE FX_RC FX_APP_NAME);
+
+  this_context_fx(){
+    THIS_NAME="fx";
+    THIS_RC_NAME="fx.rc";
+    THIS_RC_VAR="FX_RC";
+    THIS_SELF="$SELF_PATH";
+    THIS_LABEL="bashfx";
+    THIS_LINK_BLOCK="link:${THIS_LABEL}";
+    THIS_RC_BLOCK="rc:${THIS_LABEL}";
+  }
+
+  this_context_fx;
+  
+
+#-------------------------------------------------------------------------------
+# Core Includes
+#-------------------------------------------------------------------------------
+
+
+ # Use smart_source to load libraries
+  fx_smart_source paths   || exit 1
+  fx_smart_source linker  || exit 1
+  fx_smart_source rcfile  || exit 1
+  fx_smart_source textman || exit 1
+  fx_smart_source package || exit 1
+
+#-------------------------------------------------------------------------------
+# 
+#-------------------------------------------------------------------------------
+
+  options(){
+    local this next opts=("${@}");
+
+    opt_debug=${opt_debug:-1};
+    opt_quiet=${opt_quiet:-1};
+    opt_trace=${opt_trace:-1};
+    opt_silly=${opt_silly:-1};
+    opt_yes=${opt_yes:-1};
+    opt_dev=${opt_dev:-1};
+    opt_flags=${opt_flags:-1};
+
+
+    for ((i=0; i<${#opts[@]}; i++)); do
+      this=${opts[i]}
+      next=${opts[i+1]}
+      case "$this" in
+        (--yes|-y)
+          opt_yes=0
+          #stderr "option yes"
+          ;;
+        (--flag*|-f)
+          opt_flags=0;
+          #stderr "option yes"
+          ;;
+        (--tra*|-t)
+          opt_trace=0;
+          opt_debug=0;
+          opt_quiet=1;
+          #stderr "option trace"
+          ;;
+        (--sil*|--verbose|-v)
+          opt_silly=0;
+          opt_trace=0;
+          opt_debug=0;
+          opt_quiet=1;
+          #stderr "option trace"
+          ;;
+        (--debug|-d)
+          opt_debug=0;
+          opt_quiet=1;
+          #stderr "option debug"
+          ;;
+        (--dev|-D)
+          opt_dev=0;
+          opt_debug=0;
+          opt_flags=0;
+          opt_quiet=1;
+          #stderr "option dev"
+          ;;
+        #-*) err="Invalid flag [$this].";;
+      esac
+    done
+
+
+
+    #quiet override
+    for arg in "${opts[@]}"; do
+      if [[ "$arg" == "-q" || "$arg" == "--quiet" ]]; then
+        opt_quiet=0
+        # Turn off other verbosity levels
+        opt_debug=1
+        opt_trace=1
+        opt_silly=1
+        break # Found it, no need to check other flags
+      fi
+    done
+
+
+    [ -n "$err" ] && fatal "$err";
+  }
+
+#-------------------------------------------------------------------------------
+# Embedded Docx
+#-------------------------------------------------------------------------------
+
+  is_empty_file(){
+    local this=$1;
+    trace "Checking for empty file ($this)";
+    if [[ -s "$this" ]]; then
+      if grep -q '[^[:space:]]' "$this"; then
+        return 1;
+      else
+        return 0;
+      fi
+    fi
+    return 0;
+  }
+
+  has_subdirs(){
+    local dir="$1"
+    for d in "$dir"/*; do
+      [ -d "$d" ] && return 0
+    done
+    return 1
+  }
+
+
+#-------------------------------------------------------------------------------
+# INIT
+#-------------------------------------------------------------------------------
+
+
+  setup(){
+    local res ret;
+    init_fx;
+    if ensure_fx_setup; then
+      okay "System has valid paths.";
+      rc=${!THIS_RC_VAR}; ret=$?;
+      if save_rc_file $SELF_PATH $rc "rc:bashfx"; then
+        set_profile_link $rc;
+      fi
+    else
+      error "System paths are invalid.";
+    fi
+  }
+
+
+  do_setup(){
+    trace "Setting up FX..."
+    setup;
+  }
+
+
+
+
+
+  init_fx(){
+    local app;
+    if [ -z "$FX_RC" ]; then 
+      info "[VAR] FX vars loading from init ...";
+      export FX_APP_NAME='fx';
+      app="$FX_APP_NAME";
+      export FX_BIN="${FX_BIN:-$XDG_FX_BIN/$app}";
+      export FX_LIB="${FX_LIB:-$XDG_FX_LIB/$app}";
+      export FX_INC="${FX_INC:-$FX_LIB/inc}";
+      export FX_ETC="${FX_ETC:-$XDG_FX_CONFIG/$app/etc}";
+      export FX_DATA="${FX_DATA:-$XDG_FX_SHARE/$app}";
+      export FX_STATE="${FX_STATE:-$XDG_FX_STATE/$app}";
+      export FX_RC="${FX_RC:-${FX_ETC}/fx.rc}";
+
+      export FX_PROFILE=$(canonical_profile);
+    fi
+  }
+
+
+  ensure_fx_setup() {
+    trace "[DIR] checking application directories...";
+    local this var val;
+
+    for var in "${fx_var_list[@]}"; do
+
+      this=$(deref_var "$var") #bash 3.2
+       
+      # Skip empty values
+      [ -z "${this}" ] && {
+        error "$var is unset or empty!" >&2;
+        return 1;
+      }
+
+      # Check if it's a directory, or try to create it
+      #'^FX_INIT_|^FX_RC|^FX_APP'
+      case "$var" in
+        (FX_RC|FX_APP_NAME) continue ;;  # skip these vars
+      esac
+
+      
+      if [ -d "$this" ]; then
+        trace "[DIR] $var → $this exists"
+      else
+        trace "[DIR] $var → $this does not exist, attempting to create..."
+        mkdir -p "$this" || {
+          err="Failed to create $this for $var" >&2
+          return 1;
+        }
+        okay "Created $this for $var"
+      fi
+    done #end for
+    return 0;
+  }
+
+
+
+  do_init(){
+    init_fx;
+  }
+
+
+
+#-------------------------------------------------------------------------------
+# Troubleshooting
+#-------------------------------------------------------------------------------
+
+  do_vars(){
+    trace "Dumping debug vars";
+    local call="$1" arg="$2" cmd= ret;
+    case $call in
+      (xdg)    env | grep '^XDG_FX_';;
+      (fx)     env | grep '^FX_' | grep -v '^FX_INIT_' ;;
+      (init)   env | grep '^FX_INIT';;
+      (*)
+        if [ ! -z "$call" ]; then
+          err="Invalid prefix => $call";
+          return 1;
+        fi
+      ;;
+    esac
+    return 0;
+  }
+
+  #TODO:refactor for robustness
+  do_inspect(){
+    xline
+    declare -F | grep 'do_' | awk '{print $3}';
+    local _content=$(sed -n -E "s/[[:space:]]+([^#)]+)\)[[:space:]]+cmd[[:space:]]*=[\'\"]([^\'\"]+)[\'\"].*/\1 \2/p" "$0");
+    xline
+    while IFS= read -r row; do
+      info "$row"
+    done <<< "$_content"
+  }
+
+  dev_cleanup(){
+    local rcfile=$(get_rc_file);
+
+    printf "found rc %s\n" "$rcfile";
+
+  }
+
+
+#-------------------------------------------------------------------------------
+# System Funcs
+#-------------------------------------------------------------------------------
+  
+  stat_check(){
+    local str=;
+    str+="\t--> Input: ${white2}$1 $2 $3 $4 $5 $6 ${x}\n\n";
+    str+="\t$(__flag $opt_flags "stats [-f]")\n";
+    str+="\t$(__flag $opt_debug "debug [-d]")  \t$(__flag $opt_trace "trace [-t]")\n";
+    str+="\t$(__flag $opt_quiet "quiet [-q]")  \t$(__flag $opt_yes   "yes   [-y]")\n";
+    str+="\t$(__flag $opt_silly "silly [-V]")  \t$(__flag $opt_dev   "dev   [-D]")\n";  
+    quiet_off;
+    __boltbox "$str";
+  }
+
+
+  dispatch(){
+    local call="$1" arg="$2" exc cmd= ret;
+    case $call in
+      (dem*)        cmd='dev_read_embed';;
+      (dlink|devl)  cmd='dev_show_link';;
+      (rc*)         cmd='do_rcfile';;
+      (link)        cmd='do_link';;
+      (unl*)        cmd='do_unlink';;
+      (init)        cmd='do_init';;
+      (inst*)       cmd='do_install_pkg';;
+      (pkg)         cmd='do_check_pkg';;
+      (ls)          cmd='do_list_pkgs';;
+      (vars)        cmd='do_vars';;
+      (insp*|\!)    cmd='do_inspect';;
+      (clean)       cmd='dev_cleanup';;
+      (stat)        cmd='stat_check';;
+      (setup)       cmd='do_setup';;
+      (help|\?)     cmd="usage";;
+      (noop)        cmd="noop";;
+      (*)
+        if [ ! -z "$call" ]; then
+          fatal "Invalid command => $call";
+        fi
+      ;;
+    esac
+    if [ -n "$cmd" ]; then
+      "$cmd" "$arg" $@;   # Pass all extra arguments if cmd is defined
+      ret=$?;
+    else
+      echo -ne "\n\n\t"
+      usage    
+    fi
+    [ -n "$err" ] && fatal "$err";
+    echo -ne "\n\n"
+    return $ret;
+  }
+
+
+  main(){
+    local ret=1;
+
+    __logo "$SELF_PATH" 3 12; #--> self ref
+    require_dev && str+="\t${red2}${boto} Dev mode enabled ${boto}${x}" || str+="\n\t\t${grey}${bowtie} User Mode ${x}";
+    stderr "$str\n";
+
+
+    [ $opt_flags -eq 0 ] && stat_check "${orig_args[@]}";
+
+    # help
+    if [[ $@ =~ "?" || $@ =~ "help" ]]; then
+      usage;
+      exit 0;
+    fi
+
+    load_rc_file; ret=$?;
+
+    if [ $ret -eq 0 ]; then
+      info "[RC] FX values loaded from fx.rc";
+    fi
+    
+    if [[ -z "$XDG_FX_HOME" || -z "$XDG_FX_LOCAL" ]]; then 
+      trace "Cannot find XDG logical home/local, attempting to init xdg."
+      init_xdg;
+    fi
+
+    
+    if [ -z "$FX_RC" ]; then 
+      trace "Cannot load FX_RC, want to init fx."
+      init_fx;
+      # if __confirm "${blue}(?) FX is not installed. Install now?${x}"; then
+      #   setup;
+      # fi
+    fi
+
+    dispatch "${args[@]}";ret=$?;
+    [ -n "$err" ] && fatal "$err" || stderr "$out";
+    unset out err;
+    return $ret
+  }
+
+  #command for testing options and setup
+  noop(){ return 0; }
+
+  usage(){
+    if command_exists 'docx'; then
+      docx "$BASH_SOURCE" "doc:help"; 
+    fi
+  }
+
+
+#-------------------------------------------------------------------------------
+
+
+  if [ "$0" = "-bash" ]; then
+    :
+  else
+
+    orig_args=("${@}")
+    options "${orig_args[@]}";
+    
+    args=()
+    for arg in "${orig_args[@]}"; do
+      [[ "$arg" == -* ]] && continue #filter option-like
+      args+=( "$arg" )
+    done
+
+    main "${args[@]}";
+
+  fi
+
+
+#====================================doc:help!==================================
+#
+#  \n\t${b}DEVFX [command] [--flags|-f] ${x}
+#
+#  \t${w2}[ Commands ]${x}
+#
+#  \t${o}setup${x}  - auto run through install steps
+#  \t${o}link${x}   - deploy package to .local/bin
+#  \t${o}unlink${x} - deploy package to .local/bin 
+#  \t${o}chk${x}    - check if a package is installed
+#  \t${o}pkgs${x}   - list available packages
+#
+#  \t${w2}[ Dev ]${x}
+#
+#  \t${o}insp  ${x} - debug available functions
+#  \t${o}dem   ${x} - debug embedded docs
+#  \t${o}dlink ${x} - debug profile link output
+#  \t${o}vars  ${x} - dump vars with prefix FX_*
+#
+#
+#  \t${w2}[ Flags ]${x}
+#
+#  \t${o}${ff} [-d] debug${x}
+#  \t${o}${ff} [-t] trace${x}
+#  \t${o}${ff} [-V] verbose${x}
+#  \t${o}${ff} [-q] quiet${x}
+#  \t${o}${ff} [-f] flags${x}
+#  \t${o}${ff} [-D] dev${x}    
+# 
+#
+# 
+#=================================!doc:help=====================================
+
+#=================================rc:bashfx!=====================================
+# ${shebang}
+# 
+# # ${LINE}
+# # Updated: %date%
+#
+# export FX_INSTALLED=0;
+# export FX_APP_NAME="$FX_APP_NAME";
+# 
+# export FX_BIN="$FX_BIN";
+# export FX_LIB="$FX_LIB";
+# export FX_INC="$FX_INC";
+# export FX_ETC="$FX_ETC";
+# export FX_DATA="$FX_DATA";
+# export FX_STATE="$FX_STATE";
+# export FX_RC="$FX_ETC/fx.rc";
+#
+#
+#=================================!rc:bashfx=====================================
+
+#=================================link:bashfx!=====================================
+# #### bashfx ####
+#   
+#  # Updated: %date%
+#  # bashfx installed - do not manually edit this block
+#  # use [fx unlink] to remove
+#  export FX_RC="$FX_RC";
+#
+#  if [ -f "${FX_RC}" ]; then
+#    source ${FX_RC} --load-vars;
+#  else
+#    echo "${o}[FX] fx.rc file is missing. Run devfx repair! ${x}";
+#  fi
+#
+# ########
+#=================================!link:bashfx=====================================

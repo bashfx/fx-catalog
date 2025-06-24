@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-
-
+#===============================================================================
 
 
     #MORE_GLYPHS="☾☀︎⚁⚂⚅⚀☉✙✚✜♱⚙︎☩⚝☘︎⚑⚐☸︎🀸∇∞÷×∑∬≋&⊛⋈⊛⋒⋓⋐⋑⨂⨹⨺⨻⩏⩛⩚⩓⟡⨳⩩⫷⫏⟐⟑⫶⟡⧊⧇⧈⧗⧖𝒆𝚫𝚲𝜟𝜳𝜰Ω℉℃₵¢€$▽△★☆✕✖︎✓✔︎❁✿✘✰✣☑︎☒◉⦿⇒➲⟿⇪⇧↩︎⟳↻⤬⥰⥼☻☺︎✍︎✌︎♈︎♂︎⚔︎⚉"
@@ -47,9 +46,33 @@
     delta='\xE2\x96\xB3'
     pass='\xE2\x9C\x93'
     fail='\xE2\x9C\x97'
-    dots='\xE2\x80\xA6'
+    dots='\xE2\x80\xA6'   
     bolt="\xE2\x86\xAF"
     redo='\xE2\x9F\xB3'
+
+    vtri=$'\u25BD'     # ▽ down triangle
+    utri=$'\u25B3'     # △ up triangle
+    xmark=$'\u292C'    # ⤬ heavy cross
+    sword=$'\u2694'    # ⚔︎ crossed swords
+    moon=$'\u263E'     # ☾ crescent moon
+    sun=$'\u2600'      # ☀︎ sun
+    spark=$'\u273B'    # ✻ snowflake/star
+    colon2=$'\u2237'   # ∷ double colon
+    theref=$'\u2234'   # ∴ therefore
+    bull=$'\u29BF'     # ⦿ circled bullet
+    sect=$'\u00A7'     # § section symbol
+    bowtie=$'\u22C8'   # ⋈ bowtie
+    sum=$'\u2211'      # ∑ summation
+    prod=$'\u220F'     # ∏ product
+    dharm=$'\u2638'    # ☸︎ dharma wheel
+    scroll=$'\u07F7'   # ߷ paragraphus / ornament
+    note=$'\u266A'     # ♪ music note
+    anchor=$'\u2693'   # ⚓ anchor
+    unlock=$'\u26BF'   # ⚿ unlocked padlock
+    spindle=$'\u27D0'  # ⟐ circled dash / orbital
+
+
+
     space='\x20'
     eol="$(tput el)"
     eos="$(tput ed)"
