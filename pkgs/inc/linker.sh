@@ -14,18 +14,24 @@
 #-------------------------------------------------------------------------------
 
 
-  # returns canonical prof it found the src in
+
+  # does a grep check for src in profile
   has_profile_link(){
-    local res ret src=$1 prof _line;
-    prof=$FX_PROFILE;
+    local res ret src=$1 prof=$FX_PROFILE _line;
     _line="source \"$src\";"
     grep -qF "$_line" "$prof" && return 0;
     return 1;
   }
 
+  # links src (rc) to profile
   set_profile_link(){
     local res ret src=$1 prof=$FX_PROFILE _line;
-    [ -z "$src" ] && return 1;
+
+    # src must exist or linking it doesnt make sense
+    [ -z "$src" ] || [ ! -f "$src" ] && { 
+      error "[LNK] Invalid src ($src). File must exist to link.";
+      return 1; 
+    }
 
     if has_profile_link "$src"; then
       warn "already linked";
@@ -37,36 +43,29 @@
     return 1;
   }
 
+  # remove src (rc) from profile
   rem_profile_bak(){
     local res ret src=$1 prof=$FX_PROFILE _line;
     if has_profile_link "$src"; then
       _line="source \"$src\";"
       sed -i.bak "\|^$_line\$|d" "$prof";
       [ -f $prof.bak ] && rm "$prof.bak";
-    else
-      warn "already unlinked";
+      return 0;
     fi
+    return 1;
   }
 
 
-
-
 #-------------------------------------------------------------------------------
-# Dev Only
+# Dev Drivers 
 #-------------------------------------------------------------------------------
 
-  dev_show_link(){
-    if require_dev; then 
-      local rc ret; rc=$(get_rc_file); ret=$?;
-      data="$(link_profile_str)";
 
-# @ai rec 
-      # data="$(get_embedded_doc "$THIS_SELF" "$THIS_LINK_BLOCK")";
-
-      __docbox "$data";
-    else
-      error "[DEV GUARD]. 'dev_show_link' aborted.";
-    fi
+  dev_dump_profile(){
+    local prof=$(canonical_profile);
+    trace "profile:$prof";
+    res=$(cat $prof);
+    __docbox "$res";
   }
 
 

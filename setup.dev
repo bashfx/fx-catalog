@@ -19,6 +19,7 @@ else
   _red="\x1B[31m";
   _blue="\x1B[38;5;39m";
   _gold="\x1B[38;5;220m";
+  _grey="\x1B[90m";
   _green="\x1B[32m";
   _reset="\x1B[0m";
 fi
@@ -97,7 +98,7 @@ fx_setuprc_dump(){
     cat "$FXI_SETUP_RC";
     return 0;
   else
-    printf "${_red}Error loading generated RC file (%s)\n${_reset}" $FXI_SETUP_RC;
+    printf "${_red}Error loading generated RC file (%s)\n${_reset}" "$FXI_SETUP_RC";
   fi
 }
 
@@ -141,15 +142,15 @@ fx_init(){
     grep -qF "$_line" "$PROFILE" || echo "$_line" >> "$PROFILE";
 
     #load vars defined in .fxsetuprc
-    if [ -f $FXI_SETUP_RC ]; then
-      FX_STAT='start';source $FXI_SETUP_RC;
+    if [ -f "$FXI_SETUP_RC" ]; then
+      FX_STAT='start';source "$FXI_SETUP_RC";
       printf "${_green}Done...${_reset}\n";
       return 0;
     else
-      printf "${_red}Error loading generated RC file (%s)\n${_reset}" $FXI_SETUP_RC;
+      printf "${_red}Error loading generated RC file (%s)\n${_reset}" "$FXI_SETUP_RC";
     fi
   else
-    printf "${_red}Error creating RC file (%s)\n${_reset}" $FXI_SETUP_RC;
+    printf "${_red}Error creating RC file (%s)\n${_reset}" "$FXI_SETUP_RC";
   fi
 
   return 1;
@@ -161,26 +162,34 @@ fx_init(){
 # Removes the development environment setup by deleting the .fxsetuprc file,
 # removing the source line from the profile, and unsetting env vars/aliases.
 fx_uninstall(){
-  local res ret _line; 
+  local _line _profile_tmp;
   printf "${_red}Removing BashFX setup ...${_reset}\n";
-  
-  _line="source \"$FXI_SETUP_RC\";"
-  sed -i.bak "\|^$_line\$|d" "$PROFILE";
-  [ -f $PROFILE.bak ] && rm "$PROFILE.bak";
 
-  for f in $(env | sed -n 's/^\([^=]*\)=.*/\1/p' | grep '^FX'); do
-    unset "$f"
-  done
-  for f in $(declare -F | awk '{print $3}' | grep '^fx_'); do
-    unset -f "$f"
-  done
+  # Make the uninstall process stateless by determining paths independently,
+  # just like fx_init does. This makes it robust even if .fxsetuprc is missing.
+  FXI_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && echo "$PWD")";
+  FXI_SETUP_RC="${FXI_ROOT_DIR}/.fxsetuprc";
+
+  _line="source \"$FXI_SETUP_RC\";"
+  _profile_tmp="${PROFILE}.tmp.$$" # Use PID for a unique temp file name
+  # Use a temp file for sed for maximum portability and safety.
+  if sed "\|^${_line}$|d" "$PROFILE" > "$_profile_tmp" && mv "$_profile_tmp" "$PROFILE"; then
+    : # Successfully removed line
+  else
+    printf "${_red}Warning: could not modify profile file at %s${_reset}\n" "$PROFILE"
+    rm -f "$_profile_tmp" # Clean up temp file on failure
+  fi
+
+  # Use robust `while read` loops to unset shell state
+  env | grep '^FX' | cut -d= -f1 | while read -r f; do unset "$f"; done
+  declare -F | awk '/^declare -f fx_/ {print $3}' | while read -r f; do unset -f "$f"; done
   unset _red _blue _green _reset;
-  for f in $(alias | sed -n "s/^alias \([^=]*\)=.*/\1/p" | grep '^fx'); do
-    unalias "$f" 2>/dev/null
-  done
+  alias | grep '^alias fx' | cut -d' ' -f2 | cut -d= -f1 | while read -r f; do unalias "$f" 2>/dev/null; done
+
   if [ -f "$FXI_SETUP_RC" ]; then
     rm "$FXI_SETUP_RC";
   fi
+  printf "${_green}Uninstall complete.${_reset}\n";
 };
 
 #-------------------------------------------------------------------------------
@@ -191,12 +200,12 @@ fx_next(){
   if fx_ready; then
     printf "\nBashFX (fx) is ready for installation!\n";
     printf "Use [${_blue}fxinstall${_reset}] to complete. \n\n";
-    printf "Aditional Command aliases: \n\n";
+    printf "${_grey}Additional Command aliases: \n\n${_reset}";
     printf "${_green}fxdel${_reset}  : remove/uninstall BashFX setup. \n";
     printf "${_green}fxhelp${_reset} : see more commands. \n";
     printf "${_green}fxi${_reset}    : advanced/dev utils. \n";
   else 
-    printf "\nRun '${_blue}source setup.dev init${_reset}' in the project root to setup BashFX.\n\nOther commands: '${_blue}init reset check link rc${_reset}'";
+    printf "\nRun '${_blue}source setup.dev init${_reset}' in the project root to setup BashFX.\n\n${_grey}Other commands: 'init reset check link rc'${_reset}";
   fi
 }
 
@@ -211,7 +220,7 @@ fx_main(){
 
 
   if [ ! -f "$PROFILE" ]; then
-    printf "${_red}Error! canonical bash profile missing (path:%b)\n${_reset}" $PROFILE;
+    printf "${_red}Error! canonical bash profile missing (path: %s)\n${_reset}" "$PROFILE";
     return 1;
   fi
 
@@ -222,32 +231,30 @@ fx_main(){
   fi
 
   if [ -f "$FXI_SETUP_RC" ]; then
-    FX_STAT='reload'; source $FXI_SETUP_RC;
+    FX_STAT='reload'; source "$FXI_SETUP_RC";
   fi
 
+  arg="${1:-}" # Use first argument or empty string if not set
 
-  for arg in "$@"; do
-    case "$arg" in
-     (res|reset)  fx_uninstall; return 0;;
-     (rc)  fx_setuprc; return 0;;
-     (dumprc)    fx_setuprc_dump; return 0;;
-     (link)  fx_has_link; return 0;;
-     (init)  fx_init; return 0;;
-     *)    
-      printf "${_red}Unknown command ($arg)${_reset}\n";
-      return 1;;
-    esac
-
-  done
+  case "$arg" in
+    (res|reset) fx_uninstall; return 0;;
+    (rc)        fx_setuprc; return 0;;
+    (check)     fx_ready; return 0;;
+    (link)      fx_has_link; return 0;;
+    (dumprc)    fx_setuprc_dump; return 0;;
+    (init)      fx_init; return 0;;
+    ("")        # Already handled by the check for $# -eq 0
+                return 0;;
+    (*)         printf "${_red}Unknown command (%s)${_reset}\n" "$arg"; return 1;;
+  esac
 }
 
-fx_main "$@";
-
-#-------------------------------------------------------------------------------
-# cleanup
-for f in $(declare -F | awk '{print $2}' | grep '^fx_'); do
-  unset -f "$f"
-done
-unset _red _blue _green _reset _gold FX_STAT
-
-#-------------------------------------------------------------------------------
+# If FX_TEST_MODE is not set, run the script's main logic and cleanup.
+# This allows a test harness to source this script to load the functions
+# without executing them immediately.
+if [ -z "$FX_TEST_MODE" ]; then
+  fx_main "$@"
+  # cleanup
+  declare -F | awk '/^declare -f fx_/ {print $3}' | while read -r f; do unset -f "$f"; done
+  unset _red _blue _green _reset _gold FX_STAT
+fi

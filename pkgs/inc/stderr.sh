@@ -88,10 +88,10 @@
       local color="${2:-white2}";  # color for text + border
       local prefix="${!3:-}";      # optional glyph/symbol
       local stream="${4:-2}";      # default to stderr
-      local width=60;              # max width, tweak if needed
+      local width=70;              # max width, tweak if needed
       local border_char="-";
       local color_val=${!color:-$white2};
-
+      local none="";
       # Build border line
       local border=""
       while [ ${#border} -lt $width ]; do
@@ -99,14 +99,14 @@
       done
 
       # Top border
-      printf "%b\n" "${color_val}${border}${prefix}${x}${nl}" >&$stream
+      printf "\n%b\n" "${color_val}${border}${prefix}${x}${nl}" >&$stream
 
       printf '%s\n' "$text" | while IFS= read -r line || [[ -n "$line" ]]; do
         printf "%b\n" "${sp}${sp}${color_val}${line}${x}" >&$stream
       done
 
       # Bottom border
-      printf "\n%b\n" "${color_val}${border}${prefix}${x}" >&$stream
+      printf "\n%b\n\n" "${color_val}${border}${prefix}${x}" >&$stream
     else
       printf "Refuse to print box! ($opt_quiet)";
     fi
@@ -114,7 +114,7 @@
 
   __boltbox(){ __printbox "$1" "blue" "bolt"; }
   __docbox(){   __printbox "$1" "purple" "lambda"; }
-
+  __errbox(){   __printbox "$1" "red" "none"; }
 
   # Robust confirmation prompt. Reads from the TTY to avoid consuming piped stdin.
   # Respects the --yes flag.

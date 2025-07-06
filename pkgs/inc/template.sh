@@ -165,3 +165,24 @@
       exit 1;
     fi
 	}
+
+
+#-------------------------------------------------------------------------------
+# Dev Drivers 
+#-------------------------------------------------------------------------------
+
+  # debug embeded docs
+  # supports <this> context so src does not have to be passed
+  dev_print_embed(){
+    if require_dev; then 
+      opt_trace=0;
+      local src=$2 ret res lbl=$1; #note that src and lbl are backwards here vs other funcs
+      src="${src:-$THIS_SELF}"; 
+      res="$(get_embedded_doc $src $lbl )";ret=$?;
+      [ $ret -eq 0 ] && __docbox "$res";
+      return $ret;
+    else
+      error "[DEV GUARD]. 'dev_rc_embed' aborted.";
+    fi
+    return 1;
+  }

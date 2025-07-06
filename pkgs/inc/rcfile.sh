@@ -43,24 +43,6 @@
 	}
 
 
-#-------------------------------------------------------------------------------
-# Dev Only
-#-------------------------------------------------------------------------------
-
-
-  dev_read_embed(){
-    if require_dev; then 
-      opt_trace=0;
-      local src ret res lbl=$1;
-      src="$THIS_SELF";
-      res="$(get_embedded_doc $src $lbl )";ret=$?;
-      [ $ret -eq 0 ] && __docbox "$res";
-      return $ret;
-    else
-      error "[DEV GUARD]. 'dev_rc_embed' aborted.";
-    fi
-    return 1;
-  }
 
 
 
