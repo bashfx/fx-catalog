@@ -12,7 +12,7 @@
 #$ author:qodeninja
 #$ date:
 #$ semver:
-#$ autobuild: 00007
+#$ autobuild: 00008
 #
 #
 # Note
@@ -29,12 +29,11 @@
 #-------------------------------------------------------------------------------
 # Version
 #-------------------------------------------------------------------------------
-if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
-  echo "Bash version 4.0 or higher is required"
-  echo "Some 4.0+ bashism used, but can be refactored to support 3"
-  exit 1
-fi
-
+# The script has been updated to support Bash 3.2+ (e.g., default macOS bash)
+# if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+#   echo "Bash version 4.0 or higher is required"
+#   exit 1
+# fi
 
 #-------------------------------------------------------------------------------
 # Customizable Vars (change in your .profile not here)
@@ -112,40 +111,38 @@ opt_debug=0
 
 
   options(){
-    local this next opts=("${@}");
-    #opt_debug=1
-    opt_admin=1
-    opt_quiet=1
-    opt_trace=1
-    opt_env=1
-    for ((i=0; i<${#opts[@]}; i++)); do
-      this=${opts[i]}
-      next=${opts[i+1]}
-      case "$this" in
+    # Set defaults
+    opt_admin=1; opt_quiet=1; opt_trace=1; opt_env=1
+
+    # Use a while loop to consume flags, leaving only commands/args
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
         --admin|-A)
           opt_admin=0
+          shift
           ;;
         --envfile|-E)
           opt_env=0
+          shift
           ;;
         --quiet|-q)
           opt_quiet=0
-          opt_debug=1
-          opt_trace=1
+          shift
           ;;
         --tra*|-t)
           opt_trace=0
-          opt_debug=0
-          opt_quiet=1
+          shift
           ;;
         --debug|-d)
           opt_debug=0
-          opt_quiet=1
+          shift
+          ;;
+        *)
+          # Not an option, break the loop
+          break
           ;;
       esac
     done
-
-
   }
 
 
@@ -153,7 +150,7 @@ opt_debug=0
 # Sig / Flow
 #-------------------------------------------------------------------------------
     
-  command_exists(){ type "$1" &> /dev/null; }
+  command_exists(){ type "$1" >/dev/null 2>&1; }
 
   handle_interupt(){ E="$?";  kill 0; exit $E; }
   handle_stop(){ kill -s SIGSTOP $$; }
@@ -182,13 +179,14 @@ opt_debug=0
 
 stderr(){ printf "${@}${x}\n" 1>&2; }
 
-# generate_session_id() {
-#   cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1
-# }
-
 generate_session_id() {
-  openssl rand -base64 6 | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1
+  # Using /dev/urandom for better portability than openssl
+  cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1
 }
+
+# generate_session_id() {
+#   openssl rand -base64 6 | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1
+# }
 
 handle_error() {
   echo "Error: $1" >&2
@@ -211,8 +209,8 @@ is_valid_key() {
 }
 
 rm_active(){
-  if [[ -f "$HOME/.flagfx" ]]; then
-    rm -f "$HOME/.flagfx" 
+  if [[ -f "$ACTIVE_SESSION_FILE" ]]; then
+    rm -f "$ACTIVE_SESSION_FILE"
   fi
 }
 
@@ -279,12 +277,10 @@ new_session() {
 
 initialize_environment() {
   mkdir -p "$FLAGX_HOME" "$SESSION_DIR" "$KEYFILE_DIR" "$PRIVATE_DIR" || handle_error "Failed to create required directories"
+  local root_session='main'
   if ! has_sessions; then
-    error "So many sessions!"
-  else
-    info "no sessions were had at init"
-    root_session='main'    
-  fi 
+    info "No sessions found. Creating initial session: '$root_session'"
+  fi
   new_session "$root_session"
   # Auto clean temporary files in the current session
   handle_auto_clean
@@ -298,6 +294,82 @@ load_session(){
     update_session "$this_id"
   fi
 }
+
+# @todo : handle exists review
+
+handle_exists() {
+  local key="$1"
+  local key_type="$2" # 'normal' or 'locked'
+  local keypath
+
+  if [[ $key_type == "locked" ]]; then
+    keypath=$(get_locked_keyfile_path "$key")
+  else
+    keypath=$(get_keyfile_path "$key")
+  fi
+
+  if [[ -f "$keypath" ]]; then
+    return 0 # Success, key exists
+  fi
+  return 1 # Failure, key does not exist
+}
+
+# @todo : handle_source review
+
+handle_source() {
+  local session_id=$(get_current_session)
+  
+  # Source session keys
+  for file in "$KEYFILE_DIR/$session_id"/*; do
+    if [[ -f "$file" ]]; then
+      local key=$(basename "$file")
+      # Ensure key is a valid shell variable name
+      if [[ "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        local value=$(cat "$file")
+        printf "export %s=\"%s\"\n" "$key" "$value"
+      fi
+    fi
+  done
+
+  # Source locked keys
+  for file in "$PRIVATE_DIR"/*; do
+    if [[ -f "$file" ]]; then
+      local locked_key=$(basename "$file")
+      local key=$(trim_locked "$locked_key")
+      # Ensure key is a valid shell variable name
+      if [[ "$key" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        local value=$(cat "$file")
+        printf "export %s=\"%s\"\n" "$key" "$value"
+      fi
+    fi
+  done
+}
+
+
+# @todo : handle_help review
+
+handle_help() {
+  __logo
+  cat << EOF
+A file-system-based key-value store for shell scripts.
+
+Usage:
+  flagbase [options] <command> [arguments...]
+
+Commands:
+  help                            Show this help message
+  source                          Print keys as 'export' statements for sourcing
+
+  read|read_lock <key>            Read a key's value
+  write|write_lock <key> <value>  Write a value to a key
+  delete|delete_lock <key>        Delete a key
+  exists|exists_lock <key>        Check if a key exists (uses exit code)
+  ls|ls_lock                      List keys
+  ... and many more. See the source for a full list of utility commands.
+EOF
+}
+
+
 
 
 handle_list_sessions() {
@@ -590,7 +662,7 @@ handle_export() {
       if [[ -f "$file" ]]; then
         local key=$(basename "$file")
         local value=$(cat "$file")
-        echo "$key=value" >> $export_file
+        echo "$key=$value" >> $export_file
       fi
     done
   else
@@ -650,81 +722,57 @@ dispatch(){
 # Dispatcher
 command=$1
 keyfile="$2"
-[ -n "$2" ] && keyfile="${keyfile^^}"
 
-case $command in
+local op_type="normal"
+local base_command="$command"
 
-    # Session Management
-    new) new_session ;;
-    switch) switch_session "$keyfile" ;;
-    
-    # Normal Keyfile Operations
-    write) handle_write "$keyfile" "$3" normal ;;
-    read) handle_read "$keyfile" normal ;;
-    delete) handle_delete "$keyfile" normal ;;
-    new) handle_new "$keyfile" normal ;;
-    write_safe) handle_write_safe "$keyfile" "$3" normal ;;
-    ls) handle_ls normal ;;
-    
-    # Locked Keyfile Operations
-    write_lock) handle_write "$keyfile" "$3" locked
-      ;;
-    read_lock)
-      handle_read "$keyfile" locked
-      ;;
-    delete_lock)
-      handle_delete "$keyfile" locked
-      ;;
-    new_lock)
-      handle_new "$keyfile" locked
-      ;;
-    lock)
-      handle_lock "$keyfile"
-      ;;
-    unlock)
-      handle_unlock "$keyfile"
-      ;;
-    ls_lock)
-      handle_ls locked
-      ;;
-    
-    # Utility Operations
-    clean)
-      handle_clean
-      ;;
-    reset)
-      handle_reset
-      ;;
-    nuke)
-      handle_nuke
-      ;;
-    nukeall)
-      handle_nuke_all
-      ;;
-    export)
-      handle_export "$keyfile"
-      ;;
-    import)
-      handle_import "$keyfile"
-      ;;
-    hist)
-      handle_hist "$keyfile"
-      ;;
-    toggle)
-      handle_toggle "$keyfile"
-      ;;
-    lss)
-      handle_list_sessions
-      ;;
-    ids)
-      handle_select_session_by_index "$keyfile"
-      ;;
-    --*|-*)
-      echo "Ignoring flag: $command"
-      ;;
-    *)
+if [[ "$command" == *_lock ]]; then
+  op_type="locked"
+  base_command="${command%_lock}"
+fi
+
+case $base_command in
+  # Core Operations
+  write) handle_write "$keyfile" "$3" "$op_type" ;;
+  read) handle_read "$keyfile" "$op_type" ;;
+  delete) handle_delete "$keyfile" "$op_type" ;;
+  new) handle_new "$keyfile" "$op_type" ;;
+  exists) handle_exists "$keyfile" "$op_type" ;;
+  ls) handle_ls "$op_type" ;;
+  write_safe) handle_write_safe "$keyfile" "$3" "$op_type" ;;
+
+  # Session Management
+  new) new_session ;; # 'new' is overloaded for sessions and keys
+  switch) switch_session "$keyfile" ;;
+  lss) handle_list_sessions ;;
+  ids) handle_select_session_by_index "$keyfile" ;;
+
+  # Utility Operations
+  lock) handle_lock "$keyfile" ;;
+  unlock) handle_unlock "$keyfile" ;;
+  clean) handle_clean ;;
+  reset) handle_reset ;;
+  nuke) handle_nuke ;;
+  nukeall) handle_nuke_all ;;
+  export) handle_export "$keyfile" ;;
+  import) handle_import "$keyfile" ;;
+  hist) handle_hist "$keyfile" ;;
+  toggle) handle_toggle "$keyfile" ;;
+
+  # Meta
+  help|--help|-h) handle_help ;;
+  source) handle_source ;;
+
+  *)
+    # Handle original 'new' for sessions if no keyfile is given
+    if [[ "$command" == "new" && -z "$keyfile" ]]; then
+      new_session
+    else
       echo "Invalid command: $command"
-      ;;
+      handle_help
+      return 1
+    fi
+    ;;
   esac
 
 }
@@ -732,7 +780,7 @@ case $command in
 main(){
   __logo
   load_session
-  dispatch "${args[@]}";ret=$?
+  dispatch "$@";ret=$?
 }
 
 #-------------------------------------------------------------------------------
@@ -742,12 +790,9 @@ main(){
     :
   else
     
-    #command_exists fswatch
-    orig_args=("${@}")
-    options "${orig_args[@]}";
-    args=( "${orig_args[@]}" ); #delete anything that looks like an option
-    main "${args[@]}";ret=$?
+    # Process flags, which are shifted off the argument list by options()
+    options "$@"
+
+    # The remaining arguments are passed to main
+    main "$@"; ret=$?
   fi
-
-
-
