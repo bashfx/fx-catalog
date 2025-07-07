@@ -17,7 +17,11 @@
 ##☾⚯⚮⚭⚬☌⚲☉☍⚭∘∷∴⊚◎◉⦿◦✱❈※❆✻߷⚿⟐⮧
 
 #߷⚿⟐⮧
-
+#⎌ undo U+238C
+#⟲ ⟳ redo U+27F2  ↩
+# ↲” (U+21B2)
+# “↯” (U+21AF)
+# ↶ (U+21B6)
 
 #-------------------------------------------------------------------------------
 # Term
@@ -41,6 +45,7 @@
   cyan=$(tput setaf 14);
 
   purple=$(tput setaf 213);
+  purple2=$(tput setaf 141);
   white=$(tput setaf 248);
   white2=$(tput setaf 15);
   grey=$(tput setaf 244);
@@ -79,8 +84,12 @@
   uarr="\u21B0";
   delim='\x01';
   delta="\xE2\x96\xB3";
-  pass="\xE2\x9C\x93";
-  fail="\xE2\x9C\x97";
+  #pass="\xE2\x9C\x93";
+  #fail="\xE2\x9C\x97";
+  fail=$'\u2715';
+  pass=$'\u2713';
+  recv=$'\u27F2';
+
   star="\xE2\x98\x85";
   lambda="\xCE\xBB";
   idots="\xE2\x80\xA6";

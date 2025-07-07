@@ -17,10 +17,10 @@
 # Universal Link Functions
 #-------------------------------------------------------------------------------
 
-  get_next_rc(){
-    local next=${!THIS_RC_VAR};
-    if [ -n "$next" ]; then
-      echo "$next";
+  get_this_rc_val(){
+    local this=${!THIS_RC_VAR};
+    if [ -n "$this" ]; then
+      echo "$this";
       return 0;
     fi
     return 1;
@@ -45,35 +45,56 @@
 
 
 
-
 #-------------------------------------------------------------------------------
 # 
 #-------------------------------------------------------------------------------
 
 
-  get_rc_file(){
-    if [ -n "$FX_RC" ] && [ -f "$FX_RC" ]; then
-      echo "$FX_RC";
+  get_this_rc_file(){
+    local this=${!THIS_RC_VAR};
+    [ -n "$this" ] && [ -f "$this" ] && { 
+      echo "$this";
       return 0;
-    fi
+    }
     return 1;
   }
 
-  dump_rc_file(){
-    local text="$(cat ${FX_RC}; printf '@@')";
-    text="${text%@@}"
-    __docbox "$text";
-  }
+  
+  del_this_rc_file(){
+    local this=${!THIS_RC_VAR};
 
-	load_rc_file(){
-    local rc ret; rc=$(get_rc_file); ret=$?;
-    if [ $ret -ne 0 ]; then  # must pass 
-      warn "Unable to load fx.rc file. (got:$rc)";
+    if [ ! -z "$this" ]; then
+      trace "[RC] rc file found $this, deleting...";
+      [ -f "$this" ] && { rm "$this"; } || :
+      # should have been removed. permission error?
+      [ ! -f "$this" ] && { return 0; } || :
       return 1;
     fi
-		source "$FX_RC" --load-vars;
+    
+    warn "[RC] rc file not found...";
     return 0;
+  }
+
+
+	load_this_rc_file(){
+    local this=${!THIS_RC_VAR};
+    if [ -f $this ]; then  # must pass 
+      source "$this" --load-vars;
+      return 1;
+    fi
+    return 1;
 	}
 
 
-
+  dump_this_rc_file(){
+    local this=${!THIS_RC_VAR};
+    if [ -f $this ]; then 
+      local text="$(cat ${this}; printf '@@')";
+      text="${text%@@}"
+      __docbox "$text";
+      return 0;
+    else
+      error "[RC] Cannot find [this] rcfile ($this). Nothing to dump.";
+    fi
+    return 1;
+  }

@@ -43,6 +43,7 @@
   fx_var_list=(FX_BIN FX_LIB FX_ETC FX_DATA FX_STATE FX_RC FX_APP_NAME);
 
   this_context_fx(){
+    think "Setting this context [fx]";
     THIS_NAME="fx";
     THIS_RC_NAME="fx.rc";
     THIS_RC_VAR="FX_RC";
@@ -62,7 +63,7 @@
 
  # Use smart_source to load libraries
   fx_smart_source paths    || exit 1
-  fx_smart_source linker   || exit 1
+  fx_smart_source proflink || exit 1
   fx_smart_source rcfile   || exit 1
   fx_smart_source template || exit 1
   fx_smart_source package  || exit 1
@@ -218,7 +219,7 @@
       export FX_STATE="${FX_STATE:-$XDG_FX_STATE/$app}";
       export FX_RC="${FX_RC:-${FX_ETC}/fx.rc}";
 
-      export FX_PROFILE=$(canonical_profile);
+      export FX_PROFILE=${FX_PROFILE:-$(canonical_profile)}; #allow a prev set
     fi
   }
 
@@ -298,12 +299,21 @@
     done <<< "$_content"
   }
 
-  dev_cleanup(){
-    local rcfile=$(fx_get_rc_file);
-
-    printf "found rc %s\n" "$rcfile";
-
+  fx_dev_rcfile(){
+    this_context_fx;
+    dump_this_rc_file;
   }
+
+# @lbl fx clean
+
+  fx_dev_cleanup(){
+    think "Doing Dev cleanup...";
+    local rcfile=$(fx_get_rc_file); ret=$?;
+    del_this_rc_file; ret=$?;
+    fx_del_link;
+    # optional remove fxi aliases
+  }
+
 
 # @lbl fx api
 
@@ -311,40 +321,57 @@
 # FX API
 #-------------------------------------------------------------------------------
 
+
   fx_get_rc_file(){
-    local rc ret=1;
+    local rc;
+    think "Getting this fx rc file...";
     this_context_fx;
-    rc=${!THIS_RC_VAR}; 
-    [ -n "$rc" ] && { echo $rc; ret=0; }
-    return $ret;
+    rc=$(get_this_rc_file);
+    [ -f "$rc" ] && { echo "$rc"; return 0; }
+    return 1;
   }
 
 
   fx_has_link(){
     local rc ret=1;
-    rc=$(fx_get_rc_file);
-    has_profile_link && { okay "FX rc file found."; ret=0; }
-    warn "FX link not found ($rc) ($ret)";
+    fx_link_cmd "has"; ret=$?; ret=$?;
+    [ $ret -eq 0 ] && okay "FX rc file found." || warn "FX link not found.";
     return $ret;
   }
 
 
   fx_del_link(){
     local rc ret=1;
-    rc=$(fx_get_rc_file);
-    rem_profile_bak "$rc";ret=$?;
-    [ $ret -eq 0 ] && info "FX link removed" || warn "FX already unlinked";
+    fx_link_cmd "del"; ret=$?;
+    [ $ret -eq 0 ] && info "FX rc link removed" || warn "FX rc already unlinked";
     return $ret;
   }
 
 
   fx_set_link(){
     local rc ret=1;
-    rc=$(fx_get_rc_file);
-    set_profile_link "$rc"; ret=$?;
+    fx_link_cmd "add"; ret=$?;
     [ $ret -eq 0 ] && info "FX link added to profile" || warn "Fx could not link to profile";
     return $ret;
   }
+
+  fx_link_cmd(){
+    local func call="$1" rc=${FX_RC:-=$(fx_get_rc_file)} ret=1;
+    case $call in
+      (has) cmd='has_profile_link' ;;
+      (add) cmd='set_profile_link' ;;
+      (del) cmd='rem_profile_bak' ;;
+      (*)
+        return 1;
+      ;;
+    esac
+    if [ -n "$cmd" ] && function_exists "$cmd"; then
+      "$cmd" "$rc";  
+      ret=$?;
+    fi
+    return $ret;
+  }
+
 
   fx_print_embed(){
     dev_print_embed "rc:bashfx"; # @todo print profile block
@@ -355,8 +382,12 @@
 #-------------------------------------------------------------------------------
   
   stat_check(){
-    local str=;
+    local str prof;
+    prof=${FX_PROFILE:-$(standard_profile)};
+    
     str+="\t--> Input: ${white2}$1 $2 $3 $4 $5 $6 ${x}\n\n";
+    str+="\t FX_RC: $FX_RC \n\n";
+    str+="\t FX_PROFILE: $prof \n\n";
     str+="\t$(__flag $opt_flags "stats [-f]")\n";
     str+="\t$(__flag $opt_debug "debug [-d]")  \t$(__flag $opt_trace "trace [-t]")\n";
     str+="\t$(__flag $opt_quiet "quiet [-q]")  \t$(__flag $opt_yes   "yes   [-y]")\n";
@@ -376,7 +407,7 @@
       (link)        cmd='fx_set_link';;
       (unlink)      cmd='fx_del_link';;
 
-      (rc*)         cmd='do_rcfile';;
+      (rc*)         cmd='fx_dev_rcfile';;
 
       (init)        cmd='do_init';;
       (inst*)       cmd='do_install_pkg';;
@@ -384,7 +415,7 @@
       (ls)          cmd='do_list_pkgs';;
       (vars)        cmd='do_vars';;
       (insp*|\!)    cmd='do_inspect';;
-      (clean)       cmd='dev_cleanup';;
+      (clean)       cmd='fx_dev_cleanup';;
       (stat)        cmd='stat_check';;
       (setup)       cmd='do_setup';;
       (help|\?)     cmd="usage";;
@@ -424,12 +455,12 @@
     [ $opt_flags -eq 0 ] && stat_check "${orig_args[@]}";
 
     # help
-    if [[ $@ =~ "?" || $@ =~ "help" ]]; then
+    if [[ "$1" == "help" || "$1" == "?" ]]; then
       usage;
       exit 0;
     fi
 
-    load_rc_file; ret=$?;
+    load_this_rc_file; ret=$?;
 
     if [ $ret -eq 0 ]; then
       info "[RC] FX values loaded from fx.rc";
@@ -527,7 +558,7 @@
 #
 # export FX_INSTALLED=0;
 # export FX_APP_NAME="$FX_APP_NAME";
-# 
+# export FX_PROFILE="$FX_PROFILE";
 # export FX_BIN="$FX_BIN";
 # export FX_LIB="$FX_LIB";
 # export FX_INC="$FX_INC";
