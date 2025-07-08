@@ -1,0 +1,66 @@
+project
+    │ 
+    ├── .geminmi              # your session settings
+    │   └── GEMINI.md         # your rules and persona
+    ├── bin                  # admin scripts and tools
+    │   └── devfx
+    ├── docs                  # documentation
+    │   ├── man               # manual pages (most of these are blank atm)
+    │   │   ├── flagbase.md
+    │   │   ├── markman.md
+    │   │   ├── semver.md
+    │   │   └── xsync.md
+    │   └── wiki              # library of wiki pages
+    │       ├── DECISIONS.md
+    │       ├── DESCRIBE.md
+    │       └── PILLARS.md
+    │
+    ├── logs                   # information files
+    │   └── tasks              # store your plans and strategies here
+    │   └── branches.log       # master list of your branches
+    ├── pkgs                   # standalone scripts for installation
+    │   ├── fx                 # fx is the core package subfolders copies into .local/lib/fx/core
+    │   │   ├── blade
+    │   │   │   └── blade.sh
+    │   │   ├── flagbase
+    │   │   │   └── flagbase.sh
+    │   │   ├── gitx
+    │   │   │   └── gitx.sh
+    │   │   ├── markman
+    │   │   │   └── markman.sh
+    │   │   ├── semver
+    │   │   │   └── semver.sh
+    │   │   ├── snek
+    │   │   │   ├── funsnek.sh
+    │   │   │   └── snek.sh
+    │   │   └── xsync
+    │   │       └── xsync.sh
+    │   ├── inc                 # core include files, shared functionality, copied to .local/lib/fx/inc
+    │   │   ├── escape.sh
+    │   │   ├── include.sh
+    │   │   ├── package.sh
+    │   │   ├── paths.sh
+    │   │   ├── proflink.sh
+    │   │   ├── rcfile.sh
+    │   │   ├── stderr.sh
+    │   │   └── template.sh
+    │   └── utils               # core utility scripts that get copied to .local/lib/fx/utils
+    │       ├── colorx
+    │       │   └── colorx.sh
+    │       ├── docx
+    │       │   └── docx.sh
+    │       ├── hsid
+    │       │   └── hsid.sh
+    │       ├── pathx
+    │       │   └── pathx.sh
+    │       └── printx
+    │           └── printx.sh
+    ├── tests                   # an attempt at adding test suites but its on hold for now
+    │   └── test-setup.sh
+    ├── .gitignore
+    ├── CHANGELOG.md
+    ├── LICENSE
+    ├── README.md
+    └── setup.devfx             # sourced setup utility to prepare devfx to run as fxi
+
+

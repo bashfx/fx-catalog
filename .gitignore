@@ -1,2 +1,5 @@
 .fxsetuprc
 .vscode
+.gemini
+*local*
+*bak*
