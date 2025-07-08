@@ -29,9 +29,12 @@
 
 	save_rc_file(){
     local rc ret src=$1 dest=$2 lbl=$3; #src has embedded doc
+    trace "save rc file args (src=$1) (dest=$2) (lbl=$3)";
+
     res="$(get_embedded_doc $src $lbl)";ret=$?;
+    
     if [ $ret -eq 0 ]; then
-      echo "$res" > ${dest};
+      echo "$res" > "$dest";
       if is_empty_file "$dest"; then
         warn "File is empty or whitespace only!";
         return 1;
@@ -78,9 +81,9 @@
 
 	load_this_rc_file(){
     local this=${!THIS_RC_VAR};
-    if [ -f $this ]; then  # must pass 
+    if [ -n "$this" ] && [ -f $this ]; then  # must pass 
       source "$this" --load-vars;
-      return 1;
+      return 0;
     fi
     return 1;
 	}

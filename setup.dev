@@ -25,6 +25,8 @@ else
 fi
 #-------------------------------------------------------------------------------
 
+__exists(){ type "$1" >/dev/null 2>&1; }
+
 # Finds the user's canonical shell profile file (.profile or .bash_profile).
 # It resolves symlinks to find the true file path.
 fxi_canonical_profile() {
@@ -86,7 +88,7 @@ cat > "$src" << EOF
 
   # helper aliases
   alias fxi="devfx";
-  alias fxinstall="fxi install";
+  alias fxinstall="fxi setup";
   alias fxsetup="source $FXI_ROOT_DIR/setup.dev";
   alias fxdel="fxsetup reset";
   alias fxhelp="fxi help";
@@ -168,6 +170,21 @@ fxi_init(){
 
 #-------------------------------------------------------------------------------
 
+fxi_clean_funcs(){
+  # The while loop must not be in a subshell (i.e. part of a pipeline)
+  # for `unset -f` to affect the current shell.
+  # We use process substitution to feed the loop.
+  while read -r f; do unset -f "$f"; done < <(declare -F | awk '/^declare -f fxi_/ {print $3}');
+}
+
+
+fxi_clean_alias(){
+  while read -r f; do unalias "$f" 2>/dev/null; done < <(alias | awk -F'[ =]' '/^alias fx/ {print $2}')
+}
+
+__clean(){
+  __exists "fxi_clean_funcs" && fxi_clean_funcs;
+}
 
 # Removes the development environment setup by deleting the .fxsetuprc file,
 # removing the source line from the profile, and unsetting env vars/aliases.
@@ -191,25 +208,20 @@ fxi_uninstall(){
   fi
 
   # Use robust `while read` loops to unset shell state
-  env | grep '^FX' | cut -d= -f1 | while read -r f; do unset "$f"; done
-  #declare -F | awk '/^declare -f fxi_/ {print $3}' | while read -r f; do unset -f "$f"; done
-  fxi_clean_funcs
+  # Use compgen for a safer way to find and unset variables, avoiding subshell issues.
+  for var in $(compgen -v FXI_); do unset "$var"; done
+
   unset _red _blue _green _reset;
-  fxi_clean_alias
 
   if [ -f "$FXI_SETUP_RC" ]; then
     rm "$FXI_SETUP_RC";
   fi
+  
+  fxi_clean_alias;
+  __clean;
   printf "${_green}Uninstall complete.${_reset}\n";
-};
-
-fxi_clean_funcs(){
-  declare -F | awk '/^declare -f fxi_/ {print $3}' | while read -r f; do unset -f "$f"; done
 }
 
-fxi_clean_alias(){
-  alias | grep '^alias fx' | cut -d' ' -f2 | cut -d= -f1 | while read -r f; do unalias "$f" 2>/dev/null; done
-}
 
 #-------------------------------------------------------------------------------
 
@@ -257,13 +269,13 @@ fxi_main(){
   arg="${1:-}" # Use first argument or empty string if not set
 
   case "$arg" in
-    (res|reset) fxi_uninstall; return 0;;
-    (rc)        fxi_setuprc; return 0;;
-    (check)     fxi_next; return 0;;
-    (link)      fxi_has_link; return 0;;
-    (unfunc)    fxi_clean_links; return 0;; #nuke any lingering function names
-    (dumprc)    fxi_setuprc_dump; return 0;;
-    (init)      fxi_init; return 0;;
+    (res|reset)  fxi_uninstall; return 0;;
+    (rc)         fxi_setuprc; return 0;;
+    (check|help) fxi_next; return 0;;
+    (link)       fxi_has_link; return 0;;
+    (unfunc)     fxi_clean_funcs; return 0;; #nuke any lingering function names
+    (dumprc)     fxi_setuprc_dump; return 0;;
+    (init)       fxi_init; return 0;;
     ("")        # Already handled by the check for $# -eq 0
                 return 0;;
     (*)         printf "${_red}Unknown command (%s)${_reset}\n" "$arg"; return 1;;
@@ -277,8 +289,11 @@ fxi_main(){
 # without executing them immediately.
 if [ -z "$FXI_TEST_MODE" ]; then
   fxi_main "$@"
+
   # cleanup
-  fxi_clean_funcs;
-  unset -f "fxi_clean_links";
-  unset _red _blue _green _reset _gold FXI_STAT
+  __clean
+  unset -f "__clean";
+  unset -f "__exists";
+
+  unset _red _blue _green _reset _gold FXI_STAT;
 fi

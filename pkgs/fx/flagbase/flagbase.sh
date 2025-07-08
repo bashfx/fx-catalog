@@ -89,7 +89,7 @@ opt_debug=0
 
   __logo(){
     if [ -z "$opt_quiet" ] || [ $opt_quiet -eq 1 ]; then
-      local logo=$(sed -n '3,9 p' $BASH_SOURCE)
+      local logo=$(sed -n '3,9 p' "$BASH_SOURCE")
       printf "\n$blue${logo//#/ }$x\n" 1>&2;
     fi
   }
@@ -217,9 +217,10 @@ rm_active(){
 
 
 has_sessions(){
-  if [ -d "$SESSION_DIR" ]; then
+  if [[ -d "$SESSION_DIR" ]]; then
     local session_files=("$SESSION_DIR"/*)
-    if [[ ${#session_files[@]} -ge 1 ]]; then
+    # Check if the glob expanded to at least one existing file.
+    if [[ ${#session_files[@]} -gt 0 && -e "${session_files[0]}" ]]; then
       return 0
     fi
   fi
@@ -375,9 +376,9 @@ EOF
 handle_list_sessions() {
   local active_session=$(get_current_session)
   local session_files=("$SESSION_DIR"/*)
-  
 
-  if [[ ${#session_files[@]} -eq 0 ]]; then
+  # Check if the glob failed to find any files
+  if [[ ${#session_files[@]} -eq 1 && ! -e "${session_files[0]}" ]]; then
     echo "No sessions available."
     return
   fi
@@ -402,7 +403,8 @@ handle_select_session_by_index() {
   local index="$1"
   local session_files=("$SESSION_DIR"/*)
 
-  if [[ ${#session_files[@]} > 1 ]]; then
+  # Check if the glob found any files before proceeding
+  if [[ ${#session_files[@]} -gt 0 && -e "${session_files[0]}" ]]; then
 
     if [[ -z "$index" ]]; then
       handle_list_sessions
@@ -421,10 +423,8 @@ handle_select_session_by_index() {
 
     switch_session "$this_id"
 
-  elif [[ ${#session_files[@]} < 1 ]]; then
-    error "No sessions available."
   else
-    warn "Already in single active session."
+    error "No sessions available."
   fi
 }
 
@@ -594,11 +594,45 @@ handle_write_safe() {
 
 handle_ls() {
   local key_type="$1"  # 'normal' or 'locked'
+  local dir_path
   if [[ $key_type == "locked" ]]; then
-    ls "$PRIVATE_DIR" || handle_error "Failed to list locked keys"
+    dir_path="$PRIVATE_DIR"
   else
-    ls "$KEYFILE_DIR/$session_id" || handle_error "Failed to list keys in session $session_id"
+    dir_path="$KEYFILE_DIR/$session_id"
   fi
+
+  if [ ! "$(ls -A "$dir_path")" ]; then
+     info "No keys found in this location."
+     return
+  fi
+
+  ls "$dir_path" || handle_error "Failed to list keys"
+}
+
+handle_hist() {
+  local key="$1"
+  local key_type="$2"
+  local keypath
+
+  if [[ "$key_type" == "locked" ]]; then
+    keypath=$(get_locked_keyfile_path "$key")
+  else
+    keypath=$(get_keyfile_path "$key")
+  fi
+
+  info "History for key '$key' (created by 'write_safe'):"
+  local history_files=("$keypath.old."*)
+  if [[ ! -e "${history_files[0]}" ]]; then
+    warn "No history found for this key."
+    return
+  fi
+
+  for file in "${history_files[@]}"; do
+    local timestamp=$(echo "$file" | sed 's/.*\.old\.//')
+    local formatted_date=$(date -r "$timestamp" "+%Y-%m-%d %H:%M:%S")
+    local value=$(cat "$file")
+    printf "  [%s] %s\n" "$formatted_date" "$value"
+  done
 }
 
 
@@ -680,7 +714,7 @@ handle_export() {
 
       local value=$(cat "$file")
       #echo "$locked_key=$(cat "$file")"
-      echo "$locked_key=$value" >> $export_file
+      echo "$locked_key=$value" >> "$export_file"
     fi
   done
 }
@@ -736,13 +770,19 @@ case $base_command in
   write) handle_write "$keyfile" "$3" "$op_type" ;;
   read) handle_read "$keyfile" "$op_type" ;;
   delete) handle_delete "$keyfile" "$op_type" ;;
-  new) handle_new "$keyfile" "$op_type" ;;
+  new)
+    if [[ -z "$keyfile" ]]; then
+      new_session
+    else
+      handle_new "$keyfile" "$op_type"
+    fi
+    ;;
   exists) handle_exists "$keyfile" "$op_type" ;;
   ls) handle_ls "$op_type" ;;
   write_safe) handle_write_safe "$keyfile" "$3" "$op_type" ;;
+  hist) handle_hist "$keyfile" "$op_type" ;;
 
   # Session Management
-  new) new_session ;; # 'new' is overloaded for sessions and keys
   switch) switch_session "$keyfile" ;;
   lss) handle_list_sessions ;;
   ids) handle_select_session_by_index "$keyfile" ;;
@@ -756,7 +796,6 @@ case $base_command in
   nukeall) handle_nuke_all ;;
   export) handle_export "$keyfile" ;;
   import) handle_import "$keyfile" ;;
-  hist) handle_hist "$keyfile" ;;
   toggle) handle_toggle "$keyfile" ;;
 
   # Meta
@@ -764,14 +803,9 @@ case $base_command in
   source) handle_source ;;
 
   *)
-    # Handle original 'new' for sessions if no keyfile is given
-    if [[ "$command" == "new" && -z "$keyfile" ]]; then
-      new_session
-    else
-      echo "Invalid command: $command"
-      handle_help
-      return 1
-    fi
+    echo "Invalid command: $command"
+    handle_help
+    return 1
     ;;
   esac
 

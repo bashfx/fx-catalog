@@ -150,8 +150,8 @@
 
 
 	get_embedded_doc(){
-    trace "Getting embedded link.";
     local str ret src=$1 lbl=$2;
+    trace "Getting embedded link. (label=$lbl)";
     [ -z "$lbl" ] || [ -z "$src" ]||[ ! -f "$src" ]  && { 
       fatal "Cant read embedded doc invalid args ($1) ($2)";
       return 1;

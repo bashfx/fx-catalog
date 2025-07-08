@@ -42,6 +42,9 @@
 
   fx_var_list=(FX_BIN FX_LIB FX_ETC FX_DATA FX_STATE FX_RC FX_APP_NAME);
 
+  # @lbl this context
+
+
   this_context_fx(){
     think "Setting this context [fx]";
     THIS_NAME="fx";
@@ -51,6 +54,17 @@
     THIS_LABEL="bashfx";
     THIS_LINK_BLOCK="link:${THIS_LABEL}";
     THIS_RC_BLOCK="rc:${THIS_LABEL}";
+  }
+
+  fx_this_check(){
+    trace "this_name : $THIS_NAME";
+    trace "this_rc_name  : $THIS_RC_NAME";
+    trace "this_rc_var   : $THIS_RC_VAR";
+    trace "this_self     : $THIS_SELF";
+    trace "this_label    : $THIS_LABEL";
+    trace "this_link_block: $THIS_LINK_BLOCK";
+    trace "this_rc_block : $THIS_RC_BLOCK";
+    return 0;
   }
 
   this_context_fx;
@@ -179,30 +193,6 @@
 # INIT
 #-------------------------------------------------------------------------------
 
-# @lbl setup
-
-  setup(){
-    local rc res ret=1;
-    init_fx;
-    if ensure_fx_setup; then
-      okay "System has valid paths.";
-      rc=$(fx_get_rc_file);
-      if save_rc_file $SELF_PATH $rc "rc:bashfx"; then
-        set_profile_link $rc;
-      fi
-    else
-      error "System paths are invalid.";
-    fi
-  }
-
-
-  do_setup(){
-    trace "Setting up FX..."
-    setup;
-  }
-
-
-
 
 
   init_fx(){
@@ -266,57 +256,6 @@
   }
 
 
-
-#-------------------------------------------------------------------------------
-# Troubleshooting
-#-------------------------------------------------------------------------------
-
-  do_vars(){
-    trace "Dumping debug vars";
-    local call="$1" arg="$2" cmd= ret;
-    case $call in
-      (xdg)    env | grep '^XDG_FX_';;
-      (fx)     env | grep '^FX_' | grep -v '^FX_INIT_' ;;
-      (init)   env | grep '^FX_INIT';;
-      (*)
-        if [ ! -z "$call" ]; then
-          err="Invalid prefix => $call";
-          return 1;
-        fi
-      ;;
-    esac
-    return 0;
-  }
-
-  #TODO:refactor for robustness
-  do_inspect(){
-    xline
-    declare -F | grep 'do_' | awk '{print $3}';
-    local _content=$(sed -n -E "s/[[:space:]]+([^#)]+)\)[[:space:]]+cmd[[:space:]]*=[\'\"]([^\'\"]+)[\'\"].*/\1 \2/p" "$0");
-    xline
-    while IFS= read -r row; do
-      info "$row"
-    done <<< "$_content"
-  }
-
-  fx_dev_rcfile(){
-    this_context_fx;
-    dump_this_rc_file;
-  }
-
-# @lbl fx clean
-
-  fx_dev_cleanup(){
-    think "Doing Dev cleanup...";
-    local rcfile=$(fx_get_rc_file); ret=$?;
-    del_this_rc_file; ret=$?;
-    fx_del_link;
-    # optional remove fxi aliases
-  }
-
-
-# @lbl fx api
-
 #-------------------------------------------------------------------------------
 # FX API
 #-------------------------------------------------------------------------------
@@ -376,6 +315,93 @@
   fx_print_embed(){
     dev_print_embed "rc:bashfx"; # @todo print profile block
   }
+
+
+#-------------------------------------------------------------------------------
+# Troubleshooting
+#-------------------------------------------------------------------------------
+
+  do_vars(){
+    trace "Dumping debug vars";
+    local call="$1" arg="$2" cmd= ret;
+    case $call in
+      (xdg)    env | grep '^XDG_FX_';;
+      (fx)     env | grep '^FX_' | grep -v '^FX_INIT_' ;;
+      (init)   env | grep '^FX_INIT';;
+      (*)
+        if [ ! -z "$call" ]; then
+          err="Invalid prefix => $call";
+          return 1;
+        fi
+      ;;
+    esac
+    return 0;
+  }
+
+  #TODO:refactor for robustness
+  do_inspect(){
+    xline
+    declare -F | grep 'do_' | awk '{print $3}';
+    local _content=$(sed -n -E "s/[[:space:]]+([^#)]+)\)[[:space:]]+cmd[[:space:]]*=[\'\"]([^\'\"]+)[\'\"].*/\1 \2/p" "$0");
+    xline
+    while IFS= read -r row; do
+      info "$row"
+    done <<< "$_content"
+  }
+
+  fx_dev_rcfile(){
+    this_context_fx;
+    dump_this_rc_file;
+  }
+
+# @lbl fx clean
+
+  fx_dev_cleanup(){
+    think "Doing Dev cleanup...";
+    local rcfile=$(fx_get_rc_file); ret=$?;
+    del_this_rc_file; ret=$?;
+    fx_del_link;
+    # optional remove fxi aliases
+  }
+
+
+# @lbl fx api
+
+
+#-------------------------------------------------------------------------------
+# Setup
+#-------------------------------------------------------------------------------
+  
+# @lbl setup
+
+  setup(){
+    local rc res ret=1;
+    think "Setup starting....."
+
+    this_context_fx;
+    init_fx;
+    fx_this_check;
+
+    if ensure_fx_setup; then
+      okay "System has valid paths.";
+      rc=$(fx_get_rc_file);
+      if save_rc_file "$SELF_PATH" "$rc" "rc:bashfx"; then
+        set_profile_link $rc;
+      fi
+    else
+      error "System paths are invalid.";
+    fi
+  }
+
+
+  do_setup(){
+    trace "Setting up FX..."
+    setup;
+  }
+
+
+
+
 
 #-------------------------------------------------------------------------------
 # System Funcs
