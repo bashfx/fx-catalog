@@ -12,11 +12,9 @@
 #                                    
 #===============================================================================
 #-------------------------------------------------------------------------------
-#$ name: fx
-#$ author:qodeninja
-#$ date:
-#$ semver:
-#$ autobuild: 00010
+#$ name: devfx (becomes fx in runtime)
+#$ author: qodeninja & Shebang
+#$ semver: 0.2.0
 #-------------------------------------------------------------------------------
 #=====================================code!=====================================
 
@@ -80,8 +78,9 @@
   fx_smart_source proflink || exit 1
   fx_smart_source rcfile   || exit 1
   fx_smart_source template || exit 1
-  fx_smart_source package  || exit 1
-  fx_smart_source integrity || exit 1
+  fx_smart_source manifest   || exit 1
+  fx_smart_source integrity  || exit 1
+  fx_smart_source pkglinker  || exit 1
 
 #-------------------------------------------------------------------------------
 # 
@@ -394,40 +393,86 @@
 
     if ensure_fx_setup; then
       okay "System has valid paths.";
-      rc=$(fx_get_rc_file);
-      if save_rc_file "$SELF_PATH" "$rc" "rc:bashfx"; then
-        set_profile_link $rc;
-        fx_self_promote; # Promote devfx to fx
-        # Call setup.dev reset to clean up temporary environment
-        info "Cleaning up temporary setup environment..."
-        "$FXI_ROOT_DIR/setup.dev" reset || warn "Failed to clean up temporary setup environment."
-        okay "BashFX installation complete! Please reload your shell (e.g., 'source ~/.bashrc' or open a new terminal) to activate the 'fx' command."
-      fi
+      fx_install_system;
     else
       error "System paths are invalid.";
     fi
   }
-
 
   do_setup(){
     trace "Setting up FX..."
     setup;
   }
 
-  fx_deploy_pkgs(){
-    info "Deploying packages..."
-    do_deploy_pkgs # Call the library function from package.sh
+  fx_install_system(){
+    info "Installing BashFX system..."
+    
+    # Step 1: Deploy all packages and create the manifest
+    fx_deploy_all_packages || { error "Package deployment failed."; return 1; }
+    
+    # Step 2: Verify the integrity of all deployed packages
+    fx_integrity_verify_all || { error "Package integrity verification failed."; return 1; }
+    
+    # Step 3: Link all executables
+    fx_pkglinker_link_all || { error "Executable linking failed."; return 1; }
+    
+    # Step 4: Create and link the rc file
+    local rc_file
+    rc_file=$(fx_get_rc_file)
+    save_rc_file "$SELF_PATH" "$rc_file" "rc:bashfx" || { error "Failed to save rc file."; return 1; }
+    set_profile_link "$rc_file" || { error "Failed to link rc file to profile."; return 1; }
+    
+    # Step 5: Promote devfx to fx
+    fx_self_promote || { error "Failed to promote devfx to fx."; return 1; }
+    
+    # Step 6: Clean up the temporary setup environment
+    info "Cleaning up temporary setup environment..."
+    "$FXI_ROOT_DIR/setup.dev" reset || warn "Failed to clean up temporary setup environment."
+    
+    okay "BashFX installation complete! Please reload your shell (e.g., 'source ~/.bashrc' or open a new terminal) to activate the 'fx' command."
   }
 
-  fx_verify_pkgs(){
-    info "Verifying packages..."
-    do_verify_pkgs # Call the library function from integrity.sh
+  fx_deploy_all_packages() {
+    info "Starting package deployment..."
+    local pkg_root="$FXI_PKG_DIR"
+    
+    # Clear existing manifest
+    fx_manifest_clear || { error "Failed to clear manifest."; return 1; }
+
+    # Deploy package groups
+    _fx_deploy_group "inc"   "$pkg_root/inc"   "$FX_LIB/inc"
+    _fx_deploy_group "utils" "$pkg_root/utils" "$FX_LIB/utils"
+    _fx_deploy_group "fx"    "$pkg_root/fx"    "$FX_LIB/fx"
+
+    okay "Package deployment finished."
+  }
+
+  _fx_deploy_group() {
+    local group_name="$1" src_dir="$2" dst_dir="$3"
+    
+    info "Deploying group: $group_name"
+    
+    if [ ! -d "$src_dir" ]; then
+      warn "Source directory for group '$group_name' not found: $src_dir"
+      return 1
+    fi
+
+    mkdir -p "$dst_dir" || { error "Failed to create destination directory: $dst_dir"; return 1; }
+
+    find "$src_dir" -type f -name "*.sh" | while read -r file; do
+      local dst_file="$dst_dir/$(basename "$file")"
+      
+      cp "$file" "$dst_file" || { error "Failed to copy $file to $dst_file"; continue; }
+      
+      # Add entry to manifest
+      fx_manifest_add_entry "$dst_file" || error "Failed to add $dst_file to manifest."
+    done
   }
 
 
 
 
-#-------------------------------------------------------------------------------"""
+#-------------------------------------------------------------------------------
 # System Funcs
 #-------------------------------------------------------------------------------
   
@@ -451,28 +496,25 @@
   dispatch(){
     local call="$1" arg="$2" exc cmd= ret;
     case $call in
-      (prof)        cmd='dev_dump_profile';;
-      (docs)        cmd='fx_print_embed';;
-      (has_link)    cmd='fx_has_link';;
-      (link)        cmd='fx_set_link';;
-      (link-exec)   cmd='fx_link_executables';;
-      (unlink)      cmd='fx_del_link';;
+      (prof)        cmd='dev_dump_profile';;;
+      (docs)        cmd='fx_print_embed';;;
+      (has_link)    cmd='fx_has_link';;;
+      (link)        cmd='fx_set_link';;;
+      (unlink)      cmd='fx_del_link';;;
 
-      (rc*)         cmd='fx_dev_rcfile';;
+      (rc*)         cmd='fx_dev_rcfile';;;
 
-      (init)        cmd='do_init';;
-      (inst*)       cmd='do_install_pkg';;
-      (pkg)         cmd='do_check_pkg';;
-      (ls)          cmd='do_list_pkgs';;
-      (vars)        cmd='do_vars';;
-      (insp*|\!)    cmd='do_inspect';;
-      (clean)       cmd='fx_dev_cleanup';;
-      (stat)        cmd='stat_check';;
-      (setup)       cmd='do_setup';;
-      (deploy)      cmd='fx_deploy_pkgs';;
-      (verify)      cmd='fx_verify_pkgs';;
-      (help|\?)     cmd="usage";;
-      (noop)        cmd="noop";;
+      (init)        cmd='do_init';;;
+      (inst*)       cmd='do_install_pkg';;;
+      (pkg)         cmd='do_check_pkg';;;
+      (ls)          cmd='do_list_pkgs';;;
+      (vars)        cmd='do_vars';;;
+      (insp*|\!)    cmd='do_inspect';;;
+      (clean)       cmd='fx_dev_cleanup';;;
+      (stat)        cmd='stat_check';;;
+      (setup)       cmd='do_setup';;;
+      (help|\?)     cmd="usage";;;
+      (noop)        cmd="noop";;;
       (*)
         if [ ! -z "$call" ]; then
           fatal "Invalid command => $call";
