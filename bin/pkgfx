@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#
+# pkgfx: The BashFX Package Manager
+# Manages installation, integrity, and linking of packages.
+#
+
+# Source required libraries
+# shellcheck source=../pkgs/inc/include.sh
+source "$(dirname "$0")/../pkgs/inc/include.sh"
+
+# Use fx_smart_source to load other libraries
+fx_smart_source "manifest"
+fx_smart_source "integrity"
+fx_smart_source "pkglinker"
+
+####################################################################
+# Main execution logic
+####################################################################
+main() {
+  # This is a scaffold.
+  # The full dispatcher logic will be added incrementally.
+  echo "pkgfx dispatcher (scaffold)"
+}
+
+main "$@"
