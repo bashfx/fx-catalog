@@ -31,6 +31,11 @@
     local rc ret src=$1 dest=$2 lbl=$3; #src has embedded doc
     trace "save rc file args (src=$1) (dest=$2) (lbl=$3)";
 
+    # Ensure directory exists
+    mkdir -p "$(dirname "$dest")" || { error "Failed to create directory for rc file: $(dirname "$dest")"; return 1; }
+    # Create file if it doesn't exist
+    [ ! -f "$dest" ] && touch "$dest" || { error "Failed to create rc file: $dest"; return 1; }
+
     res="$(get_embedded_doc $src $lbl)";ret=$?;
     
     if [ $ret -eq 0 ]; then

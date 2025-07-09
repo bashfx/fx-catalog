@@ -265,9 +265,9 @@
     local rc;
     think "Getting this fx rc file...";
     this_context_fx;
-    rc=$(get_this_rc_file);
-    [ -f "$rc" ] && { echo "$rc"; return 0; }
-    return 1;
+    rc="${FX_ETC}/fx.rc"; # Directly use the intended path
+    echo "$rc";
+    return 0;
   }
 
 

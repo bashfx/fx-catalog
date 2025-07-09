@@ -15,6 +15,13 @@ fx_manifest_add_entry() {
   local file="${FX_ETC}/manifest.log"
   local sum name
   
+  # --- NEW CHECK ---
+  if [[ "$(basename "$path")" == "_.sh" ]]; then
+    info "Skipping _.sh file: $path"
+    return 0
+  fi
+  # --- END NEW CHECK ---
+
   info "Adding '$path' to manifest..."
   sum=$(_integrity_get_checksum "$path") || return 1
   name=$(_manifest_get_alias_from_source "$path") || return 1

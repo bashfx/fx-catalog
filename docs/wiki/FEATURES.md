@@ -1,4 +1,3 @@
-
 # Project Features: BASHFX
 
 This document outlines the phased development roadmap for the BashFX framework.
@@ -55,7 +54,7 @@ This phase establishes the foundational mechanics for installing and configuring
 
 This critical phase ensures the architectural refactoring from Phase I is stable and testable before new features are added.
 
-- 🟡 **FEATURE-012: Test-Driven Development via Feature Drivers**
+- ✅ **FEATURE-012: Test-Driven Development via Feature Drivers**
     
     - **Description:** Formalizes the testing strategy for the project. Each new feature must be accompanied by a test driver function.
         
@@ -120,6 +119,10 @@ This phase evolves fx into a powerful developer assistant for creating new Bas
 - ⚪ **FEATURE-009: Scaffolding Tool (fx dev create)**
     
     - **Description:** Implement a command to generate a new script from a "Proper Script" template.
+        
+    - **8.1: Standard Keys:** Define keys for name, desc, author, semver, and alias.
+        
+    - **8.2: Parser Integration:** Update pkgfx to read the # alias: key during installation.
         
 - ⚪ **FEATURE-010: Code Quality Tool (fx dev lint)**
     

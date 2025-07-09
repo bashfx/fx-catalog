@@ -22,9 +22,9 @@ fx_pkglinker_link_by_alias() {
   path=$(echo "$str" | awk '{print $2}')
   [ ! -f "$path" ] && { error "Source file for name '$name' does not exist at '$path'."; return 1; }
   
-  mkdir -p "$FX_BIN_DIR"
+  mkdir -p "$FX_BIN"
   info "Linking '$name' -> '$path'"
-  ln -sf "$path" "$FX_BIN_DIR/$name" || {
+  ln -sf "$path" "$FX_BIN/$name" || {
     error "Failed to create symlink for '$name'."
     return 1
   }
