@@ -33,21 +33,33 @@
 
     # Ensure directory exists
     mkdir -p "$(dirname "$dest")" || { error "Failed to create directory for rc file: $(dirname "$dest")"; return 1; }
-    # Create file if it doesn't exist
-    [ ! -f "$dest" ] && touch "$dest" || { error "Failed to create rc file: $dest"; return 1; }
 
-    res="$(get_embedded_doc $src $lbl)";ret=$?;
-    
-    if [ $ret -eq 0 ]; then
-      echo "$res" > "$dest";
-      if is_empty_file "$dest"; then
-        warn "File is empty or whitespace only!";
-        return 1;
-      else
-        okay "We found ze file!";
-      fi
+    # Write the content directly
+    cat << EOF > "$dest" || { error "Failed to write to rc file: $dest"; return 1; }
+# ${shebang}
+# 
+# # ${LINE}
+# # Updated: $(date)
+#
+export FX_INSTALLED=0;
+export FX_APP_NAME='fx';
+export FX_PROFILE="$FX_PROFILE";
+export FX_BIN="$FX_BIN";
+export FX_LIB="$FX_LIB";
+export FX_INC="$FX_INC";
+export FX_ETC="$FX_ETC";
+export FX_DATA="$FX_DATA";
+export FX_STATE="$FX_STATE";
+export FX_RC="$FX_ETC/fx.rc";
+EOF
+
+    if is_empty_file "$dest"; then
+      warn "File is empty or whitespace only!";
+      return 1;
+    else
+      okay "RC file created successfully: $dest";
     fi
-    return $ret;
+    return 0;
 	}
 
 

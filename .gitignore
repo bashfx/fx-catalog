@@ -3,3 +3,6 @@
 .gemini
 *local*
 *bak*
+logs/*
+docs/man/*
+GEMINI*
