@@ -79,28 +79,3 @@ The system's architecture is centered on a single, powerful, context-aware scrip
         
 
 **Rationale:** This two-script model provides the best of both worlds. The main fx command remains the single, intelligent entry point for the user and developer, capable of managing its own ecosystem. By offloading the complex, stateful logic of package management to pkgfx, we keep the main script cleaner, more focused, and easier to maintain.
-
-## Part III: The Collaborative Workflow
-
-
-**1. Work Modes (CHAT/CHNG):**  
-All interactions are categorized. CHAT is for discussion; CHNG is for code modification.
-
-**2. The Development Lifecycle:**  
-All feature development or refactoring must follow this strict, iterative process:
-
-- **Branching:** For each numbered feature (e.g., FEATURE-007), a new git branch must be created from main (e.g., feature/007-pkgfx).
-    
-- **Implementation (AI):** The AI (Shebang) will write the code for the feature.
-    
-- **Driver Creation (AI):** Crucially, the AI will create a corresponding `fx dev f<number>_driver()` function for the new feature and integrate it into the fx dev dispatcher.
-
-- **Driver Integration (AI):** This driver function will be added to the devfx script and made accessible via a driver subcommand. The user will invoke it via devfx driver [N] (e.g., ./bin/devfx driver 3).
-    
-- **Verification (AI):** The AI will perform a final review of the code and driver for correctness and adherence to this document.
-    
-- **Relinquish Control (AI -> User):** The AI will present the code and driver. The AI's task for the branch is now complete. It must wait for UAT.
-    
-- **User Acceptance Testing (UAT) (User):** The user will check out the branch and run the feature driver `fx dev f\<number>_driver` to perform a "happy path" test.
-    
-- **Merge & Loop (User -> AI):** Upon successful UAT, the user will merge the branch into main and signal the AI to begin the next task.
