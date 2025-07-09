@@ -473,6 +473,64 @@
 
 
 #-------------------------------------------------------------------------------
+# Feature Drivers
+#-------------------------------------------------------------------------------
+
+  fx_dispatch_driver() {
+    local feature_num="$1"
+    shift # Remove the feature number from the arguments list
+    local driver_func="fx_f$(printf "%03d" "$feature_num")_driver"
+
+    if function_exists "$driver_func"; then
+      info "Executing driver for FEATURE-$feature_num..."
+      "$driver_func" "$@" # Pass remaining arguments to the driver
+    else
+      error "Driver function '$driver_func' not found for FEATURE-$feature_num."
+      return 1
+    fi
+  }
+
+  # @driver F003
+  fx_f003_driver() {
+    local ret=0
+    info "DRIVER: Testing FEATURE-003 (Safe Package Deployment)"
+    
+    # This is a simple "happy path" test.
+    # It relies on the setup having been run correctly.
+    think "Verifying that the manifest file exists and is not empty..."
+    [ -s "$FX_ETC/manifest.log" ] || { error "Manifest file is missing or empty."; return 1; }
+    okay "Manifest file exists."
+
+    think "Verifying a known package (semver) is in the manifest..."
+    grep -q "semver" "$FX_ETC/manifest.log" || { error "semver package not found in manifest."; ret=1; }
+    
+    if [ $ret -eq 0 ]; then
+      okay "semver package found in manifest."
+      okay "DRIVER F003: PASSED"
+    else
+      error "DRIVER F003: FAILED"
+    fi
+    return $ret
+  }
+
+  # @driver F004
+  fx_f004_driver() {
+    info "DRIVER: Testing FEATURE-004 (Package Integrity & Linking)"
+    
+    think "Running master integrity check..."
+    # The function returns 0 on success
+    fx_integrity_verify_all
+    local ret=$?
+
+    if [ $ret -eq 0 ]; then
+      okay "DRIVER F004: PASSED"
+    else
+      error "DRIVER F004: FAILED"
+    fi
+    return $ret
+  }
+
+#-------------------------------------------------------------------------------
 # System Funcs
 #-------------------------------------------------------------------------------
   
@@ -496,25 +554,22 @@
   dispatch(){
     local call="$1" arg="$2" exc cmd= ret;
     case $call in
-      (prof)        cmd='dev_dump_profile';;;
-      (docs)        cmd='fx_print_embed';;;
-      (has_link)    cmd='fx_has_link';;;
-      (link)        cmd='fx_set_link';;;
-      (unlink)      cmd='fx_del_link';;;
-
-      (rc*)         cmd='fx_dev_rcfile';;;
-
-      (init)        cmd='do_init';;;
-      (inst*)       cmd='do_install_pkg';;;
-      (pkg)         cmd='do_check_pkg';;;
-      (ls)          cmd='do_list_pkgs';;;
-      (vars)        cmd='do_vars';;;
-      (insp*|\!)    cmd='do_inspect';;;
-      (clean)       cmd='fx_dev_cleanup';;;
-      (stat)        cmd='stat_check';;;
-      (setup)       cmd='do_setup';;;
-      (help|\?)     cmd="usage";;;
-      (noop)        cmd="noop";;;
+      (prof)        cmd='dev_dump_profile';;
+      (docs)        cmd='fx_print_embed';;
+      (has_link)    cmd='fx_has_link';;
+      (link)        cmd='fx_set_link';;
+      (unlink)      cmd='fx_del_link';;
+      (rc*)         cmd='fx_dev_rcfile';;
+      (init)        cmd='do_init';;
+      (ls)          cmd='do_list_pkgs';;
+      (vars)        cmd='do_vars';;
+      (insp*|\!)    cmd='do_inspect';;
+      (clean)       cmd='fx_dev_cleanup';;
+      (stat)        cmd='stat_check';;
+      (setup)       cmd='do_setup';;
+      (driver)      cmd='fx_dispatch_driver';;
+      (help|\?)     cmd="usage";;
+      (noop)        cmd="noop";;
       (*)
         if [ ! -z "$call" ]; then
           fatal "Invalid command => $call";
@@ -523,14 +578,11 @@
     esac
 
     if [ -n "$cmd" ] && function_exists "$cmd"; then
-      "$cmd" "$arg" $@;   # Pass all extra arguments if cmd is defined
+      shift # remove the command so we can pass the rest
+      "$cmd" "$@";   # Pass all extra arguments if cmd is defined
       ret=$?;
     else
-      
-       
       __errbox "Dispatch error, could not find function ($cmd) for command ($call)";
-    
-      
     fi
     [ -n "$err" ] && fatal "$err";
     echo -ne "\n\n";
