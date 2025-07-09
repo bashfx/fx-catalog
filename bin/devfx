@@ -81,6 +81,7 @@
   fx_smart_source rcfile   || exit 1
   fx_smart_source template || exit 1
   fx_smart_source package  || exit 1
+  fx_smart_source integrity || exit 1
 
 #-------------------------------------------------------------------------------
 # 
@@ -342,7 +343,7 @@
   do_inspect(){
     xline
     declare -F | grep 'do_' | awk '{print $3}';
-    local _content=$(sed -n -E "s/[[:space:]]+([^#)]+)\)[[:space:]]+cmd[[:space:]]*=[\'\"]([^\'\"]+)[\'\"].*/\1 \2/p" "$0");
+    local _content=$(sed -n -E "s/[[:space:]]+([^#)]+)\)[[:space:]]+cmd[[:space:]]*=[\'\"]([^\'\"]+)[\'\"]\..*/\1 \2/p" "$0");
     xline
     while IFS= read -r row; do
       info "$row"
@@ -367,6 +368,15 @@
 
 # @lbl fx api
 
+  fx_self_promote(){
+    info "Promoting devfx to fx..."
+    local fx_bin_path="$FX_BIN/fx"
+    cp "$SELF_PATH" "$fx_bin_path" || { error "Failed to copy devfx to $fx_bin_path"; return 1; }
+    chmod +x "$fx_bin_path" || { error "Failed to make $fx_bin_path executable"; return 1; }
+    okay "devfx successfully promoted to fx at $fx_bin_path"
+    return 0
+  }
+
 
 #-------------------------------------------------------------------------------
 # Setup
@@ -387,6 +397,11 @@
       rc=$(fx_get_rc_file);
       if save_rc_file "$SELF_PATH" "$rc" "rc:bashfx"; then
         set_profile_link $rc;
+        fx_self_promote; # Promote devfx to fx
+        # Call setup.dev reset to clean up temporary environment
+        info "Cleaning up temporary setup environment..."
+        "$FXI_ROOT_DIR/setup.dev" reset || warn "Failed to clean up temporary setup environment."
+        okay "BashFX installation complete! Please reload your shell (e.g., 'source ~/.bashrc' or open a new terminal) to activate the 'fx' command."
       fi
     else
       error "System paths are invalid.";
@@ -399,11 +414,20 @@
     setup;
   }
 
+  fx_deploy_pkgs(){
+    info "Deploying packages..."
+    do_deploy_pkgs # Call the library function from package.sh
+  }
+
+  fx_verify_pkgs(){
+    info "Verifying packages..."
+    do_verify_pkgs # Call the library function from integrity.sh
+  }
 
 
 
 
-#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------"""
 # System Funcs
 #-------------------------------------------------------------------------------
   
@@ -431,6 +455,7 @@
       (docs)        cmd='fx_print_embed';;
       (has_link)    cmd='fx_has_link';;
       (link)        cmd='fx_set_link';;
+      (link-exec)   cmd='fx_link_executables';;
       (unlink)      cmd='fx_del_link';;
 
       (rc*)         cmd='fx_dev_rcfile';;
@@ -444,6 +469,8 @@
       (clean)       cmd='fx_dev_cleanup';;
       (stat)        cmd='stat_check';;
       (setup)       cmd='do_setup';;
+      (deploy)      cmd='fx_deploy_pkgs';;
+      (verify)      cmd='fx_verify_pkgs';;
       (help|\?)     cmd="usage";;
       (noop)        cmd="noop";;
       (*)
@@ -550,6 +577,7 @@
 #  \t${w2}[ Commands ]${x}
 #
 #  \t${o}setup${x}  - auto run through install steps
+#  \t${o}deploy${x} - copy packages to lib
 #  \t${o}link${x}   - deploy package to .local/bin
 #  \t${o}unlink${x} - deploy package to .local/bin 
 #  \t${o}chk${x}    - check if a package is installed
