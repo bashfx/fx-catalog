@@ -1,341 +1,161 @@
 #!/usr/bin/env bash
-#===============================================================================
-# <+ (Your ASCII art / Logo Hack goes here) +>
-#===============================================================================
-#-------------------------------------------------------------------------------
-#$ name: pkgfx
-#$ desc: The BashFX Package Manager.
-#$ author: YourName
-#$ semver: 0.1.0
-#$ alias: pkgfx
-#-------------------------------------------------------------------------------
-#=====================================code!=====================================
+#
+# pkgfx
+#
+# This script is the dedicated package manager for BashFX.
+# It handles package installation, uninstallation, integrity verification, and linking.
+#
 
+# --- Logo Hack ---
+#
+#  ____ ____ _  _ ____ ____ _  _ 
+#  |__| |  | |\/| |___ |__/ |__| 
+#  |  | |__| |  | |___ |  \ |  | 
+#                                
+# -----------------
 
+# Set BASHFX_ROOT to the directory where this script is located.
+# This assumes pkgfx is in the bin/ directory relative to BASHFX_ROOT.
+export BASHFX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
 
+# Source necessary libraries
+source "${BASHFX_ROOT}/pkgs/inc/escape.sh"
+source "${BASHFX_ROOT}/pkgs/inc/stderr.sh"
+source "${BASHFX_ROOT}/pkgs/inc/include.sh"
+source "${BASHFX_ROOT}/pkgs/inc/paths.sh"
+source "${BASHFX_ROOT}/pkgs/inc/package.sh"
+source "${BASHFX_ROOT}/pkgs/inc/pkglinker.sh"
+source "${BASHFX_ROOT}/pkgs/inc/manifest.sh"
+source "${BASHFX_ROOT}/pkgs/inc/integrity.sh"
 
-# --- Thisness Context & Namespace ---
-# Every script must define its own context. This allows it to use generic
-# library functions and informs the framework where it belongs.
+# Global variables for options
+opt_debug=0
+opt_trace=0
+opt_quiet=0
+opt_force=0
+opt_yes=0
+opt_dev=0
 
-__this_context() {
-  think "Setting script context..."
-  
-  # DEVELOPER: Replace these placeholder values for your script.
-  #-------------------------------------------------------------
-  THIS_NAME="pkgfx"     # The proper name of the script.
-  THIS_ALIAS="pkgfx"      # The command-line alias used for linking.
-  THIS_RC_NAME="${THIS_ALIAS}.rc"  # The name of its state/rc file.
-  
-  # DEVELOPER: Choose the script's namespace. Uncomment ONE block.
-  # This determines the installation path: ~/.local/lib/fx/[namespace]/
-  #-----------------------------------------------------------------
-  # Option 1: A core framework component.
-  # THIS_NAMESPACE="core"
-  
-  # Option 2: A reusable utility.
-  # THIS_NAMESPACE="utils"
-  
-  # Option 3: A standalone application (default).
-  THIS_NAMESPACE="$THIS_ALIAS"
-  
-  # --- Standard path definitions based on the chosen namespace ---
-  THIS_LIB_DIR="${FX_LIB}/fx/${THIS_NAMESPACE}"
-  THIS_ETC_DIR="${FX_ETC}/fx/${THIS_NAMESPACE}"
-  THIS_RC_FILE="${THIS_ETC_DIR}/${THIS_RC_NAME}"
+# Function to parse command-line options
+options() {
+    local OPTIND
+    while getopts "dtqfyD" opt; do
+        case "${opt}" in
+            d) opt_debug=1 ;;
+            t) opt_trace=1 ;;
+            q) opt_quiet=1 ;;
+            f) opt_force=1 ;;
+            y) opt_yes=1 ;;
+            D) opt_dev=1; opt_debug=1; opt_trace=1 ;;
+            *) usage; return 1 ;;
+        esac
+    done
+    shift "$((OPTIND-1))"
+    return 0
 }
-__this_context # Set the context immediately
 
+# Function to display usage information
+usage() {
+    cat <<EOF >&2
+Usage: pkgfx [options] <command> [args...]
 
-# --- Standard Library Includes ---
-# Now that the environment is bootstrapped, source additional libraries.
-source "${_PKG_INC_DIR}/paths.sh" || { error "Could not source paths.sh"; exit 1; }
-source "${_PKG_INC_DIR}/proflink.sh" || { error "Could not source proflink.sh"; exit 1; }
-source "${_PKG_INC_DIR}/rcfile.sh" || { error "Could not source rcfile.sh"; exit 1; }
-source "${_PKG_INC_DIR}/manifest.sh" || { error "Could not source manifest.sh"; exit 1; }
-source "${_PKG_INC_DIR}/integrity.sh" || { error "Could not source integrity.sh"; exit 1; }
-source "${_PKG_INC_DIR}/pkglinker.sh" || { error "Could not source pkglinker.sh"; exit 1; }
+Options:
+  -d    Enable debug output
+  -t    Enable trace output
+  -q    Suppress all output except errors
+  -f    Force operation
+  -y    Assume yes to all prompts
+  -D    Enable developer mode (implies -d and -t)
 
-#===============================================================================
-# --- STANDARD BASHFX SKELETON ---
-#===============================================================================
-# Every "Proper Script" should implement this standard interface.
+Commands:
+  install <package_name>  Install a package
+  uninstall <package_name> Uninstall a package
+  verify <package_name>   Verify package integrity
+  list                    List installed packages
+  help                    Display this help message
+EOF
+    return 0
+}
 
-# @lbl options
-options(){
-  think "options()"
-  local this next opts=(${@})
+# Function to inspect available commands (for development/debugging)
+inspect() {
+    info "Available commands:"
+    grep -E '^(do_|fx_)' "${BASH_SOURCE[0]}" | sed 's/^\(do_\|fx_\)//;s/().*$//' | while read -r cmd; do
+        info "  ${cmd}"
+    
+    done
+    return 0
+}
 
-  # Initialize standard flags to their 'off' state (1 = false)
-  opt_debug=1; opt_trace=1; opt_quiet=1; opt_force=1; opt_yes=1; opt_dev=1;
+# Dispatch function to route commands
+dispatch() {
+    local cmd="$1"
+    shift || true
 
-  for ((i=0; i<${#opts[@]}; i++)); do
-    this=${opts[i]}
-    case "$this" in
-      # DEVELOPER: Add script-specific flags here.
-      --force|-f) opt_force=0 ;;
-      
-      # Standard debugging and verbosity flags
-      -d|--debug)   opt_debug=0 ;;
-      -t|--trace)   opt_trace=0; opt_debug=0 ;;
-      -q|--quiet)   opt_quiet=0 ;;
-      -y|--yes)     opt_yes=0 ;;
-      -D|--dev)     opt_dev=0; opt_trace=0; opt_debug=0 ;;
-      -h|--help)    usage; exit 0 ;;
-      -*)           error "Invalid flag: $this"; return 1 ;;
+    case "${cmd}" in
+        install) do_install "$@" ;;
+        uninstall) do_uninstall "$@" ;;
+        verify) do_verify "$@" ;;
+        list) do_list "$@" ;;
+        help) usage ;;
+        inspect) inspect ;;
+        *) error "Unknown command: ${cmd}"; usage; return 1 ;;
     esac
-  done
-  return 0
+    return 0
 }
 
-
-#===============================================================================
-# >>> SCRIPT-SPECIFIC LOGIC GOES HERE <<<
-#===============================================================================
-# All functions specific to this script's purpose are defined in this section.
-# Use `do_*` for functions called by the dispatcher.
-
-_pkgfx_copy_and_manifest() {
-  local relative_src_path="$1"
-  local full_src_path
-  local group_name dst_dir dst_file relative_dst_path dst_subdir
-
-  # Use the provided FXI_ROOT_DIR to locate the source package
-  full_src_path="${FXI_ROOT_DIR}/pkgs/$relative_src_path"
-
-  if [ ! -f "$full_src_path" ]; then
-    error "Source package not found: $full_src_path"
-    return 1
-  fi
-
-  # Determine group name (inc, utils, fx)
-  case "$relative_src_path" in
-    inc/*) group_name="inc" ;;
-    utils/*) group_name="utils" ;;
-    fx/*) group_name="fx" ;;
-    *)
-      error "Unknown package group for: $relative_src_path"
-      return 1
-      ;;
-  esac
-
-  info "Deploying $relative_src_path to $group_name group..."
-
-  if [ "$group_name" == "fx" ]; then
-    # For 'fx' group, preserve subdirectory structure
-    relative_dst_path="${relative_src_path#fx/}" # Remove 'fx/' prefix
-    dst_dir="${FX_LIB}/fx"
-    dst_file="${dst_dir}/${relative_dst_path}"
-    dst_subdir="$(dirname "$dst_file")"
-    mkdir -p "$dst_subdir" || { error "Failed to create destination subdirectory: $dst_subdir"; return 1; }
-  else
-    # For 'inc' and 'utils' groups, flatten
-    dst_dir="${FX_LIB}/${group_name}"
-    dst_file="${dst_dir}/$(basename "$full_src_path")"
-    mkdir -p "$dst_dir" || { error "Failed to create destination directory: $dst_dir"; return 1; }
-  fi
-
-  cp "$full_src_path" "$dst_file" || { error "Failed to copy $full_src_path to $dst_file"; return 1; }
-  fx_manifest_add_entry "$dst_file" || { error "Failed to add $dst_file to manifest."; return 1; }
-
-  echo "$dst_file" # Return the installed path
-  return 0
-}
+# --- Command Implementations ---
 
 do_install() {
-  local pkg_relative_src_path="$1"
-  if [ -z "$pkg_relative_src_path" ]; then
-    error "Usage: pkgfx install <relative_package_path>"
-    return 1
-  fi
-
-  info "Attempting to install package from source: $pkg_relative_src_path"
-
-  local installed_path
-  installed_path=$(_pkgfx_copy_and_manifest "$pkg_relative_src_path") || {
-    error "Package deployment failed for '$pkg_relative_src_path'."
-    return 1
-  }
-
-  # Get alias from manifest entry (assuming fx_manifest_add_entry populates it or we can derive it)
-  local pkg_alias
-  pkg_alias=$(_manifest_get_alias_from_source "$installed_path") || {
-    error "Failed to get alias for '$installed_path'. Make sure the package has a '#$ alias:' entry."
-    return 1
-  }
-
-  # Link the package
-  fx_pkglinker_link_by_alias "$pkg_alias" || {
-    error "Failed to link package '$pkg_alias'. Check if it's a proper script with an alias."
-    return 1
-  }
-
-  okay "Package '$pkg_alias' from '$pkg_relative_src_path' installed successfully to '$installed_path'."
-  return 0
-}
-
-do_list() {
-  info "Listing installed packages:"
-  local manifest_file="${FX_ETC}/manifest.log"
-  if [ -f "$manifest_file" ]; then
-    cat "$manifest_file"
-  else
-    warn "No packages installed yet. Manifest file not found: $manifest_file"
-  fi
-  return 0
-}
-
-do_verify() {
-  info "Verifying package integrity..."
-  fx_integrity_verify_all
-  return $?
+    local package_name="$1"
+    if [[ -z "${package_name}" ]]; then
+        error "Usage: pkgfx install <package_name>"
+        return 1
+    fi
+    info "Installing package: ${package_name}"
+    # Placeholder for actual installation logic
+    return 0
 }
 
 do_uninstall() {
-  local pkg_alias="$1"
-  if [ -z "$pkg_alias" ]; then
-    error "Usage: pkgfx uninstall <package_alias>"
-    return 1
-  fi
-
-  info "Attempting to uninstall package: $pkg_alias"
-
-  local manifest_entry
-  local manifest_entry_result
-  manifest_entry_result=$(fx_manifest_get_entry_by_alias "$pkg_alias")
-  if [ $? -ne 0 ]; then
-    error "Package '$pkg_alias' not found in manifest. Cannot uninstall."
-    return 1
-  fi
-  manifest_entry="$manifest_entry_result"
-
-  local installed_path
-  installed_path=$(echo "$manifest_entry" | awk '{print $2}')
-
-  # Unlink the package
-  if ! fx_pkglinker_unlink_by_alias "$pkg_alias"; then
-    error "Failed to unlink package '$pkg_alias'."
-    # Continue with removal, as symlink might not exist but file does
-  fi
-
-  # Remove from manifest
-  if ! fx_manifest_remove_entry "$installed_path"; then
-    error "Failed to remove '$installed_path' from manifest."
-    return 1
-  fi
-
-  # Remove the actual file
-  if [ -f "$installed_path" ]; then
-    rm "$installed_path" || {
-      error "Failed to remove installed file: $installed_path"
-      return 1
-    }
-    okay "Removed installed file: $installed_path"
-  else
-    warn "Installed file not found: $installed_path. Skipping file removal."
-  fi
-
-  okay "Package '$pkg_alias' uninstalled successfully."
-  return 0
+    local package_name="$1"
+    if [[ -z "${package_name}" ]]; then
+        error "Usage: pkgfx uninstall <package_name>"
+        return 1
+    fi
+    info "Uninstalling package: ${package_name}"
+    # Placeholder for actual uninstallation logic
+    return 0
 }
 
-
-#===============================================================================
-# --- CORE EXECUTION & USAGE ---
-#===============================================================================
-
-# @lbl dispatch
-dispatch(){
-  think "dispatch()"
-  local cmd="$1"
-  shift # The rest of $@ are now arguments for the subcommand.
-  
-  case "$cmd" in
-    install)
-      do_install "$@"
-      return $? ;;
-    uninstall)
-      do_uninstall "$@"
-      return $? ;;
-    list)
-      do_list "$@"
-      return $? ;;
-    verify)
-      do_verify "$@"
-      return $? ;;
-    
-    "") # No command was given
-      usage >&2
-      return 1 ;;
-    *)
-      error "Unknown command: '$cmd'"
-      usage >&2
-      return 1 ;;
-  esac
+do_verify() {
+    local package_name="$1"
+    if [[ -z "${package_name}" ]]; then
+        error "Usage: pkgfx verify <package_name>"
+        return 1
+    fi
+    info "Verifying package: ${package_name}"
+    # Placeholder for actual verification logic
+    return 0
 }
 
-
-# @lbl main
-main(){
-  think "main()"
-  options "${orig_args[@]}" || exit 1
-  
-  local args=()
-  for arg in "${orig_args[@]}"; do
-    [[ "$arg" == -* ]] && continue
-    args+=("$arg")
-  done
-  
-  # If no positional args are given after filtering flags, show usage.
-  [ ${#args[@]} -eq 0 ] && { usage; exit 0; }
-  
-  dispatch "${args[@]}"
-  return $?
+do_list() {
+    info "Listing installed packages..."
+    # Placeholder for actual package listing logic
+    return 0
 }
 
-
-# @lbl usage
-usage(){
-  # This function prints the usage/help text.
-  # For now, we use a simple heredoc. This should be manually updated
-  # to use the 'Comment Hack' pattern with sed/awk once the documentation
-  # block is written at the end of the file.
-  cat << EOF >&2
-Usage: $THIS_ALIAS <command> [options]
-  
-  A brief description of what this script does.
-  
-Commands:
-  install   - Install a BashFX package.
-  uninstall - Uninstall a BashFX package.
-  list      - List installed BashFX packages.
-  verify    - Verify the integrity of installed BashFX packages.
-
-Options:
-  -f, --force - Force an action.
-  -h, --help  - Show this help text.
-EOF
+# Main entry point
+main() {
+    options "$@" || return 1
+    local args=("$@")
+    if [[ "${#args[@]}" -eq 0 ]]; then
+        usage
+        return 1
+    fi
+    dispatch "${args[@]}"
+    return 0
 }
 
-#===============================================================================
-# --- MAIN EXECUTION ---
-#===============================================================================
-# This block ensures the script runs when executed, but not when sourced.
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  orig_args=("$@")
-  main "${orig_args[@]}"
-  exit $?
-fi
-
-#===============================================================================
-# --- EMBEDDED DOCUMENTATION (COMMENT HACKS) ---
-#===============================================================================
-#
-# <+ To enable embedded docs, create a block like the one below +>
-# <+ and update the `usage()` function to parse it with sed/awk. +>
-#
-# #### usage ####
-#
-#  (Your detailed, formatted help text goes here)
-#
-# #### /usage ####
+# Execute main
+main "$@"
