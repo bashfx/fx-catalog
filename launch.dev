@@ -11,17 +11,25 @@
 # source "./setup.conf"; <--configurations would go here
 if [ -n "$NO_COLOR" ]; then
   _red=
+  _red2=
   _blue=
   _gold=
   _green=
+  _purple=
+  _purple2=
+  _grey=
   _reset=
 else
-  _red="\x1B[31m";
-  _blue="\x1B[38;5;39m";
-  _gold="\x1B[38;5;220m";
-  _grey="\x1B[90m";
-  _green="\x1B[32m";
-  _reset="\x1B[0m";
+  _red=$'\x1B[31m';
+  _red2=$'\x1B[38;5;197m';
+  _blue=$'\x1B[38;5;39m';
+  _gold=$'\x1B[38;5;220m';
+  _grey=$'\x1B[90m';
+  _green=$'\x1B[32m';
+
+  _purple=$'\x1B[38;5;213m';
+  _purple2=$'\x1B[38;5;141m';
+  _reset=$'\x1B[0m';
 fi
 #-------------------------------------------------------------------------------
 
@@ -66,16 +74,16 @@ fxi_canonical_profile() {
 #-------------------------------------------------------------------------------
 
 
-# Generates the .fxsetuprc file with dynamic paths and helper aliases.
+# Generates the .fxlaunchrc file with dynamic paths and helper aliases.
 # This file establishes the initial development environment.
 # @param $1 - The absolute path where the RC file should be created.
-fxi_setuprc(){
+fxi_launchrc(){
   local src=$1;
   [ -z $src ] && return 1;
 cat > "$src" << EOF
 #!/usr/bin/env bash
 
-  export FXI_SETUP_RC="$src";
+  export FXI_LAUNCH_RC="$src";
   export FXI_ROOT_DIR="$FXI_ROOT_DIR";
   export FXI_BIN_DIR="\$FXI_ROOT_DIR/bin";
   export FXI_PKG_DIR="\$FXI_ROOT_DIR/pkgs";
@@ -87,13 +95,14 @@ cat > "$src" << EOF
   fi
 
   # helper aliases
-  alias fxi="devfx";
-  alias fxinstall="fxi setup";
-  alias fxsetup="source $FXI_ROOT_DIR/setup.dev";
-  alias fxdel="fxsetup reset";
-  alias fxhelp="fxi help";
-  alias fxundef="fxsetup unfunc";
-  [[ -z "\$FXI_STAT"  ]] && fxsetup;
+  alias fxp="devfx";
+  alias fxinstall="fxp install";
+  alias fxhelp="fxp help";
+
+  alias fxlaunch="source $FXI_ROOT_DIR/launch.dev";
+  alias fxidel="fxlaunch reset";
+  alias fxirc="fxlaunch dumprcs";
+  alias fxihelp="fxlaunch help"
 
 EOF
 
@@ -103,21 +112,21 @@ EOF
 #-------------------------------------------------------------------------------
 
 
-# Dumps the content of the existing .fxsetuprc file to stdout.
-fxi_setuprc_dump(){
-  if [ -f "$FXI_SETUP_RC" ]; then
-    cat "$FXI_SETUP_RC";
+# Dumps the content of the existing .fxlaunchrc file to stdout.
+fxi_launchrc_dump(){
+  if [ -f "$FXI_LAUNCH_RC" ]; then
+    cat "$FXI_LAUNCH_RC";
     return 0;
   else
-    printf "${_red}Error loading generated RC file (%s)\n${_reset}" "$FXI_SETUP_RC";
+    printf "${_red}Error loading generated RC file (%s)\n${_reset}" "$FXI_LAUNCH_RC";
   fi
 }
 
 #-------------------------------------------------------------------------------
 
-# Checks if the user's profile file contains the source line for .fxsetuprc.
+# Checks if the user's profile file contains the source line for .fxlaunchrc.
 fxi_has_link(){
-  local _line="source \"$FXI_SETUP_RC\";";
+  local _line="source \"$FXI_LAUNCH_RC\";";
   grep -qF "$_line" "$PROFILE";
 }
 
@@ -127,42 +136,40 @@ fxi_has_link(){
 # Checks if the setup is complete (i.e., the RC file exists and is linked).
 fxi_ready(){
   if fxi_has_link; then
-    [ -f "$FXI_SETUP_RC" ] && return 0;  
+    [ -f "$FXI_LAUNCH_RC" ] && return 0;  
   fi
   return 1;
 }
 
 #-------------------------------------------------------------------------------
 
-# Initializes the development environment by creating the .fxsetuprc file
+# Initializes the development environment by creating the .fxlaunchrc file
 # and linking it to the user's profile.
-fxi_init(){
-  printf "${_green}BashFX setup ...${_reset}\n";
+fxi_launch(){
 
   local res ret _line; 
-  
 
   # Use a pre-defined FXI_ROOT_DIR for testing, otherwise calculate it.
   export FXI_ROOT_DIR="${FXI_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && echo "$PWD")}"
-  FXI_SETUP_RC="${FXI_ROOT_DIR}/.fxsetuprc";
+  FXI_LAUNCH_RC="${FXI_ROOT_DIR}/.fxlaunchrc";
 
-  fxi_setuprc "$FXI_SETUP_RC"; ret=$?;
+  fxi_launchrc "$FXI_LAUNCH_RC"; ret=$?;
   
   if [ $ret -eq 0 ]; then
-    _line="source \"$FXI_SETUP_RC\";"
+    _line="source \"$FXI_LAUNCH_RC\";"
     grep -qF "$_line" "$PROFILE" || echo "$_line" >> "$PROFILE";
 
-    #load vars defined in .fxsetuprc
-    if [ -f "$FXI_SETUP_RC" ]; then
-      FXI_STAT='start';source "$FXI_SETUP_RC";
-      printf "${_green}Done...${_reset}\n";
+    #load vars defined in .fxlaunchrc
+    if [ -f "$FXI_LAUNCH_RC" ]; then
+      FXI_STAT='start';source "$FXI_LAUNCH_RC";
+      printf "${_purple2}Launcher Environment Initialized...${_reset}\n";
       fxi_next
       return 0;
     else
-      printf "${_red}Error loading generated RC file (%s)\n${_reset}" "$FXI_SETUP_RC";
+      printf "${_red}Error loading generated RC file (%s)\n${_reset}" "$FXI_LAUNCH_RC";
     fi
   else
-    printf "${_red}Error creating RC file (%s)\n${_reset}" "$FXI_SETUP_RC";
+    printf "${_red}Error creating RC file (%s)\n${_reset}" "$FXI_LAUNCH_RC";
   fi
 
   return 1;
@@ -170,55 +177,40 @@ fxi_init(){
 
 #-------------------------------------------------------------------------------
 
-fxi_clean_funcs(){
-  # The while loop must not be in a subshell (i.e. part of a pipeline)
-  # for `unset -f` to affect the current shell.
-  # We use process substitution to feed the loop.
-  while read -r f; do unset -f "$f"; done < <(declare -F | awk '/^declare -f fxi_/ {print $3}');
-}
-
-
-fxi_clean_alias(){
-  while read -r f; do unalias "$f" 2>/dev/null; done < <(alias | awk -F'[ =]' '/^alias fx/ {print $2}')
-}
-
-__clean(){
-  __exists "fxi_clean_funcs" && fxi_clean_funcs;
-}
-
-# Removes the development environment setup by deleting the .fxsetuprc file,
+# Removes the development environment setup by deleting the .fxlaunchrc file,
 # removing the source line from the profile, and unsetting env vars/aliases.
-fxi_uninstall(){
+fxi_reset(){
   local _line _profile_tmp;
-  printf "${_red}Removing BashFX setup ...${_reset}\n";
+  printf "${_red}Removing Launcher Environment ...${_reset}\n";
 
-  # Make the uninstall process stateless by determining paths independently,
-  # just like fxi_init does. This makes it robust even if .fxsetuprc is missing.
+  # Make the uninstall process stateless by determining paths independently.
   export FXI_ROOT_DIR="${FXI_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && echo "$PWD")}"
-  FXI_SETUP_RC="${FXI_ROOT_DIR}/.fxsetuprc"
+  FXI_LAUNCH_RC="${FXI_ROOT_DIR}/.fxlaunchrc"
 
-  _line="source \"$FXI_SETUP_RC\";"
-  _profile_tmp="${PROFILE}.tmp.$$" # Use PID for a unique temp file name
-  # Use a temp file for sed for maximum portability and safety.
-  if sed "\|^${_line}$|d" "$PROFILE" > "$_profile_tmp" && mv "$_profile_tmp" "$PROFILE"; then
+  # Use grep -vF for safer fixed-string matching to remove the source line.
+  _line="source \"$FXI_LAUNCH_RC\";"
+  _profile_tmp="${PROFILE}.tmp.$$"
+  if grep -vF -- "$_line" "$PROFILE" > "$_profile_tmp" && mv "$_profile_tmp" "$PROFILE"; then
     : # Successfully removed line
   else
     printf "${_red}Warning: could not modify profile file at %s${_reset}\n" "$PROFILE"
     rm -f "$_profile_tmp" # Clean up temp file on failure
   fi
 
-  # Use robust `while read` loops to unset shell state
-  # Use compgen for a safer way to find and unset variables, avoiding subshell issues.
+  # Remove the RC file if it exists.
+  rm -f "$FXI_LAUNCH_RC"
+
+  # Use compgen to concisely unset all aliases and functions starting with 'fx'.
+  # This is more robust and readable than parsing output with awk.
+  for alias_name in $(compgen -A alias fx); do unalias "$alias_name" 2>/dev/null; done
+  for func_name in $(compgen -A function fxi_); do unset -f "$func_name"; done
+
+  # Unset all environment variables.
   for var in $(compgen -v FXI_); do unset "$var"; done
 
-  unset _red _blue _green _reset;
+  # Unset the color variables used by this script.
+  unset _red _red2 _blue _gold _grey _green _purple _purple2 _reset
 
-  if [ -f "$FXI_SETUP_RC" ]; then
-    rm "$FXI_SETUP_RC";
-  fi
-  
-  fxi_clean_alias;
-  __clean;
   printf "${_green}Uninstall complete.${_reset}\n";
 }
 
@@ -232,15 +224,38 @@ fxi_next(){
     printf "\nBashFX (fx) is ready for installation!\n";
     printf "Use [${_blue}fxinstall${_reset}] to complete. \n\n";
     printf "${_grey}Additional Command aliases: \n\n${_reset}";
-    printf "${_green}fxdel${_reset}  : remove/uninstall BashFX setup. \n";
-    printf "${_green}fxhelp${_reset} : see more commands. \n";
-    printf "${_green}fxi${_reset}    : advanced/dev utils. \n";
-    printf "${_green}fxundef${_reset}: advanced/dev utils. \n";
+    printf "${_green}fxinext${_reset} : check the next step. \n";
+    printf "${_green}fxidel${_reset}  : remove/uninstall BashFX setup. \n";
+    printf "${_green}fxirc${_reset}   : dump setup rc file. \n";
+    printf "${_green}fxihelp${_reset} : see more commands. \n";
+
+    printf "${_green}fxp${_reset}     : advanced/dev utils. \n";
+
+  elif [ -n "$FX_RC" ] && [ -f "$FX_RC" ]; then
+    printf "${_green}BASHFX looks installed.${_reset}\n";
   else 
-    printf "\nRun '${_blue}source setup.dev init${_reset}' in the project root to setup BashFX.\n\n${_grey}Other commands: 'init reset check link rc'${_reset}";
+    printf "\nRun '${_blue}source launch.dev launch${_reset}' in the project root to setup the launcher.\n\n${_grey}Other commands: 'reset check dumprc'${_reset}";
   fi
 }
 
+fxi_cmds(){
+cat << EOF
+
+    Launch: 
+  ${_blue}  
+    fxlaunch          (main command)
+    fxlaunch reset    (fxidel)
+    fxlaunch check    (fxinext)
+    fxlaunch dumprc   (fxirc) ${_reset} 
+
+    Install:${_gold}
+
+    fxp help
+    fxp install       (fxinstall)
+  ${_reset}
+
+EOF
+}
 #-------------------------------------------------------------------------------
 
 # Main entry point and command dispatcher for the script.
@@ -261,21 +276,21 @@ fxi_main(){
     return 0;
   fi
 
-  if [ -f "$FXI_SETUP_RC" ]; then
+  if [ -f "$FXI_LAUNCH_RC" ]; then
     :
-    # FXI_STAT='reload'; source "$FXI_SETUP_RC";
+    # FXI_STAT='reload'; source "$FXI_LAUNCH_RC";
   fi
 
   arg="${1:-}" # Use first argument or empty string if not set
 
   case "$arg" in
-    (res|reset)  fxi_uninstall; return 0;;
-    (rc)         fxi_setuprc; return 0;;
-    (check|help) fxi_next; return 0;;
+    (res|reset)  fxi_reset; return 0;;
+    (rc)         fxi_launchrc; return 0;;
+    (cmds|help)  fxi_cmds; return 0;;
+    (check|next) fxi_next; return 0;;
     (link)       fxi_has_link; return 0;;
-    (unfunc)     fxi_clean_funcs; return 0;; #nuke any lingering function names
-    (dumprc)     fxi_setuprc_dump; return 0;;
-    (init)       fxi_init; return 0;;
+    (dumprc)     fxi_launchrc_dump; return 0;;
+    (launch)     fxi_launch; return 0;;
     ("")        # Already handled by the check for $# -eq 0
                 return 0;;
     (*)         printf "${_red}Unknown command (%s)${_reset}\n" "$arg"; return 1;;
@@ -290,10 +305,12 @@ fxi_main(){
 if [ -z "$FXI_TEST_MODE" ]; then
   fxi_main "$@"
 
-  # cleanup
-  __clean
-  unset -f "__clean";
+  # Automatic Cleanup:
+  # This runs after fxi_main completes to remove the launcher's own functions
+  # from the user's shell, preventing pollution. This is the correct pattern
+  # for sourced scripts, as 'trap EXIT' would not work as expected.
+  for func_name in $(compgen -A function fxi_); do unset -f "$func_name"; done
   unset -f "__exists";
 
-  unset _red _blue _green _reset _gold FXI_STAT;
+  unset _red _red2 _blue _gold _grey _green _purple _purple2 _reset;
 fi

@@ -34,68 +34,64 @@
   #   :
   # fi
 
-  red2=$(tput setaf 197);
-  red=$(tput setaf 9);
-  orange=$(tput setaf 214);
-  yellow=$(tput setaf 3);
+  # Use hardcoded ANSI escape sequences for performance and portability.
+  # The $'\...' syntax tells Bash to interpret the escape codes.
+  red2=$'\x1B[38;5;197m';
+  red=$'\x1B[31m';
+  orange=$'\x1B[38;5;214m';
+  yellow=$'\x1B[33m';
 
-  green=$(tput setaf 2);
-  blue=$(tput setaf 6);
-  blue2=$(tput setaf 39);
-  cyan=$(tput setaf 14);
+  green=$'\x1B[32m';
+  blue=$'\x1B[36m';
+  blue2=$'\x1B[38;5;39m';
+  cyan=$'\x1B[38;5;14m';
+  magenta=$'\x1B[35m';
 
-  purple=$(tput setaf 213);
-  purple2=$(tput setaf 141);
-  white=$(tput setaf 248);
-  white2=$(tput setaf 15);
-  grey=$(tput setaf 244);
-  grey2=$(tput setaf 240);
-
-
-  revc=$(tput rev);
-
-  #we need to stop using $x here, but cannot until we clean them all up.
-  x=$(tput sgr0); #deprec this
-
-  #slighter newer x may rename this still
-  xx=$(tput sgr0);
-  
-  eol="$(tput el)";
-  eos="$(tput ed)";
-  cll="$(tput cuu 1 && tput el)";
-  bld="$(tput bold)";
-  
+  purple=$'\x1B[38;5;213m';
+  purple2=$'\x1B[38;5;141m';
+  white=$'\x1B[38;5;248m';
+  white2=$'\x1B[38;5;15m';
+  grey=$'\x1B[38;5;244m';
+  grey2=$'\x1B[38;5;240m';
 
 
-  line="##---------------$nl";
-  tab=$'\\t';
-  nl=$'\\n';
-  sp='\x20';
+  revc=$'\x1B[7m';   # Reverse video
+  bld=$'\x1B[1m';    # Bold
+  x=$'\x1B[0m';      # Reset all attributes
+  xx=$'\x1B[0m';     # Alias for reset
 
-  snek='\xe2\x99\x8b';
-  itime='\xe2\xa7\x97';
-  spark='\xe2\x9f\xa1';
-  flag_off="\xe2\x9a\x90"; 
-  flag_on="\xe2\x9a\x91"; 
-  diamond='\xE1\x9B\x9C';
-  arrup='\xE2\x86\x91';
-  arrdn='\xE2\x86\x93';
-  darr="\u21B3";
-  uarr="\u21B0";
-  delim='\x01';
-  delta="\xE2\x96\xB3";
-  #pass="\xE2\x9C\x93";
-  #fail="\xE2\x9C\x97";
+  eol=$'\x1B[K';    # Erase to end of line
+  eos=$'\x1B[J';    # Erase to end of display
+  cll=$'\x1B[1A\x1B[K'; # Move cursor up one line and erase line
+
+  tab=$'\t';
+  nl=$'\n';
+  sp=' ';
+
+  snek=$'\xe2\x99\x8b';
+  itime=$'\xe2\xa7\x97';
+  spark=$'\xe2\x9f\xa1';
+  flag_off=$'\xe2\x9a\x90';
+  flag_on=$'\xe2\x9a\x91';
+  diamond=$'\xE1\x9B\x9C';
+  arrup=$'\xE2\x86\x91';
+  arrdn=$'\xE2\x86\x93';
+  darr=$'\u21B3';
+  uarr=$'\u21B0';
+  delim=$'\x01';
+  delta=$'\xE2\x96\xB3';
+
+  #matching icon set now
   fail=$'\u2715';
   pass=$'\u2713';
   recv=$'\u27F2';
 
-  star="\xE2\x98\x85";
-  lambda="\xCE\xBB";
-  idots="\xE2\x80\xA6";
-  bolt="\xE2\x86\xAF";
-  spark="\xe2\x9f\xa1";
-  redo="\xE2\x86\xBB";
+  star=$'\xE2\x98\x85';
+  lambda=$'\xCE\xBB';
+  idots=$'\xE2\x80\xA6';
+  bolt=$'\xE2\x86\xAF';
+  redo=$'\xE2\x86\xBB';
+
   uage=$'\u2756';    # ❖
   cmdr=$'\u2318';    # ⌘
   boto=$'\u232C';    # ⌬ robot great

@@ -4,13 +4,11 @@ These are the core engineering principles for the BashFX project. They ensure th
 
 ---
 
-### I. Clarity and User Experience
+### I. Idiomatic & Self-Contained
 
-Scripts should provide a clear and intuitive user experience. Output should be structured for immediate comprehension.
-
-- **Structured Visual Feedback:** Use color, symbols (e.g., `✓`, `✗`, `!`), and consistent formatting to convey status and hierarchy.
-- **Actionable Output:** Information should be presented in a way that is easy to scan and act upon. Avoid verbose, unstructured text dumps.
-- **Consistent Symbology:** Use a standardized set of symbols to represent common states (success, failure, warning) across the framework.
+- **Prioritize Shell Builtins:** Favor native shell commands and constructs over forking external processes (`tput`, `sed`, `awk`) to improve performance and reduce dependencies.
+- **Embrace Idiomatic Patterns:** Utilize established, efficient shell patterns (e.g., here-documents, parameter expansion) for clarity and portability.
+- **Minimize External Dependencies:** A script's core functionality should not require a trip to the package manager. Build with what the shell provides.
 
 ---
 
@@ -18,7 +16,7 @@ Scripts should provide a clear and intuitive user experience. Output should be s
 
 Code must be performant and resource-efficient.
 
-- **Prioritize Shell Builtins:** Use Bash built-in commands whenever possible to avoid the overhead of forking external processes.
+- **Avoid Process Forking:** Be mindful of the performance cost of creating subshells and forking external processes, as guided by Pillar I.
 - **Measure and Optimize:** Performance decisions should be based on measurable gains. While POSIX compliance is valued, it may be superseded by more performant Bash-specific features.
 - **Efficient Constructs:** Favor idiomatic shell patterns that are known to be efficient.
 
@@ -44,10 +42,25 @@ Scripts must be portable and run reliably across a range of common Bash environm
 
 ---
 
-### V. Code Clarity and Documentation
+### V. Clarity (Source & Output)
 
-Code should be as self-explanatory as possible.
+Code and its output should be as self-explanatory as possible.
 
 - **Self-Documenting Code:** Use clear, descriptive names for variables and functions. A logical structure should make the code's purpose apparent.
 - **Purposeful Commenting:** Comments should explain the *why* (the rationale behind a design choice or a non-obvious implementation), not the *what* (which should be clear from the code itself).
-- **Refactor for Clarity:** If a section of code is difficult to understand, the preferred solution is to refactor it for clarity rather than adding explanatory comments.
+- **Structured Visual Feedback:** Use color, symbols, and consistent formatting to convey status and hierarchy in script output.
+
+
+---
+
+### Architecture Alignment
+
+The Pillars provide general guidance, whereas the `ARCHITECTURE.md` document provides opinionated direction. Its rules, patterns, and guidance take precedence where appropriate.
+
+- **Proper Script**: A so-called "Proper Script" is a self-contained solution that (i) implements the BashFX Standard Interface (set of functions),  (ii) supports the Standard Patterns (especially XDG+) and (iii) builds from the BashFX Script Template. As the library and standard patterns mature, the definition of proper script may expand. Proper here implies that a script is fully featured and compatible with the BashFX framework. A proper script in this context further adheres to the Guest Oath.
+
+- **Meaningful Namespaces**: Namespaces are an ideal because naming things is hard, and context is dynamic. With that in mind, a script should make an heroic attempt to have its own vanity namespace to prevent clobbering in Bashland (e.g., FX_/fx_, MARK_/mark_). The is further extended to all assets and artifacts that have an inherent connection. Namespaces provide a visual hint in regards to ownership, relationship, and functionality. Once such meanings are established, they should be used consistently. 
+
+- **Design Patterns**: Proper scripts should use the style, patterns, and conventions infered, established and applied by the BashFX framework; otherwise old and new guard Bashisms take precedence. 
+
+- **Context Aware**: Core BashFX prioritizes the lowest common denominator, preferring to support the stable tail end rather than the bleeding edge; understanding that many of the low level tools provide sufficient surface to address most design needs. BashFX prefers pre-installed tools, and will defer installing additional packages whenever possible. Whenever higher functionality demands, Proper Scripts should provide graceful degredation or version guards.

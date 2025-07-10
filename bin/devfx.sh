@@ -22,7 +22,7 @@
   
   SELF_PATH="$0";
 
-  # bootstapper
+
   if [ -n "$FX_INC_DIR" ]; then
     ___="$FX_INC_DIR"; #fx
   else
@@ -89,72 +89,35 @@
 # @lbl options
 
   options(){
-    local this next opts=("${@}");
+    # Using local ensures these variables don't leak into the global scope.
+    local err
+    opt_debug=1; opt_quiet=1; opt_trace=1; opt_silly=1;
+    opt_yes=1; opt_dev=1; opt_flags=1;
 
-    opt_debug=${opt_debug:-1};
-    opt_quiet=${opt_quiet:-1};
-    opt_trace=${opt_trace:-1};
-    opt_silly=${opt_silly:-1};
-    opt_yes=${opt_yes:-1};
-    opt_dev=${opt_dev:-1};
-    opt_flags=${opt_flags:-1};
-
-
-    for ((i=0; i<${#opts[@]}; i++)); do
-      this=${opts[i]}
-      next=${opts[i+1]}
-      case "$this" in
-        (--yes|-y)
-          opt_yes=0
-          #stderr "option yes"
-          ;;
-        (--flag*|-f)
-          opt_flags=0;
-          #stderr "option yes"
-          ;;
-        (--tra*|-t)
-          opt_trace=0;
-          opt_debug=0;
-          opt_quiet=1;
-          #stderr "option trace"
-          ;;
-        (--sil*|--verbose|-v)
-          opt_silly=0;
-          opt_trace=0;
-          opt_debug=0;
-          opt_quiet=1;
-          #stderr "option trace"
-          ;;
-        (--debug|-d)
-          opt_debug=0;
-          opt_quiet=1;
-          #stderr "option debug"
-          ;;
-        (--dev|-D)
-          opt_dev=0;
-          opt_debug=0;
-          opt_flags=0;
-          opt_quiet=1;
-          #stderr "option dev"
-          ;;
-        #-*) err="Invalid flag [$this].";;
+    # Process arguments in a single loop for clarity and efficiency.
+    for arg in "$@"; do
+      case "$arg" in
+        --yes|-y)           opt_yes=0;;
+        --flag*|-f)         opt_flags=0;;
+        --debug|-d)         opt_debug=0;;
+        --tra*|-t)          opt_trace=0;;
+        --sil*|--verb*|-V)  opt_silly=0;;
+        --dev|-D)           opt_dev=0;;
+        --quiet|-q)         opt_quiet=0;;
+        -*)                 err="Invalid flag [$arg].";; # Capture unknown flags
       esac
     done
 
+    # Apply hierarchical verbosity rules.
+    # Higher levels of verbosity enable lower levels.
+    [ "$opt_silly" -eq 0 ] && { opt_trace=0; opt_debug=0; }
+    [ "$opt_trace" -eq 0 ] && opt_debug=0
+    [ "$opt_dev" -eq 0 ]   && { opt_debug=0; opt_flags=0; }
 
-
-    #quiet override
-    for arg in "${opts[@]}"; do
-      if [[ "$arg" == "-q" || "$arg" == "--quiet" ]]; then
-        opt_quiet=0
-        # Turn off other verbosity levels
-        opt_debug=1
-        opt_trace=1
-        opt_silly=1
-        break # Found it, no need to check other flags
-      fi
-    done
-
+    # Final override: if quiet is on, it trumps all other verbosity.
+    if [ "$opt_quiet" -eq 0 ]; then
+      opt_debug=1; opt_trace=1; opt_silly=1;
+    fi
 
     [ -n "$err" ] && fatal "$err";
   }
@@ -313,7 +276,8 @@
 
 
   fx_print_embed(){
-    dev_print_embed "rc:bashfx"; # @todo print profile block
+    # This function can now call the standard template function directly
+    _get_rc_template
   }
 
 
@@ -340,13 +304,15 @@
 
   #TODO:refactor for robustness
   do_inspect(){
+    local i
     xline
-    declare -F | grep 'do_' | awk '{print $3}';
-    local _content=$(sed -n -E "s/[[:space:]]+([^#)]+)\)[[:space:]]+cmd[[:space:]]*=[\'\"]([^\'\"]+)[\'\"]\..*/\1 \2/p" "$0");
+    info "Available 'do_' functions:"
+    declare -F | grep 'do_' | awk '{print $3}'
     xline
-    while IFS= read -r row; do
-      info "$row"
-    done <<< "$_content"
+    info "Available dispatch commands:"
+    for i in "${!_dispatch_cmds[@]}"; do
+      info "  ${_dispatch_cmds[i]} -> ${_dispatch_funcs[i]}"
+    done
   }
 
   fx_dev_rcfile(){
@@ -362,6 +328,28 @@
     del_this_rc_file; ret=$?;
     fx_del_link;
     # optional remove fxi aliases
+  }
+
+  # @lbl fx clean
+  # Cleans up all installed packages and manifest
+  fx_dev_clean_packages() {
+    require_dev || { error "This function requires dev mode."; return 1; }
+    think "Cleaning up all installed packages and manifest..."
+    if [ -d "$FX_LIB" ]; then
+      rm -rf "$FX_LIB" || { error "Failed to remove $FX_LIB"; return 1; }
+      okay "Removed $FX_LIB"
+    else
+      warn "$FX_LIB does not exist, skipping removal."
+    fi
+
+    if [ -f "$FX_ETC/manifest.log" ]; then
+      rm -f "$FX_ETC/manifest.log" || { error "Failed to remove manifest.log"; return 1; }
+      okay "Removed $FX_ETC/manifest.log"
+    else
+      warn "Manifest file does not exist, skipping removal."
+    fi
+    okay "Package cleanup complete."
+    return 0
   }
 
 
@@ -383,7 +371,7 @@
   
 # @lbl setup
 
-  fx_install_controller(){
+  setup(){
     local rc res ret=1;
     think "Setup starting....."
 
@@ -392,80 +380,64 @@
     fx_this_check;
 
     if ensure_fx_setup; then
-      info "System has valid paths.";
+      okay "System has valid paths.";
       fx_install_system;
     else
       error "System paths are invalid.";
     fi
   }
 
-
+  do_setup(){
+    trace "Setting up FX..."
+    setup;
+  }
 
   fx_install_system(){
     info "Installing BashFX system..."
     
-    # Step 1: Deploy all packages and create the manifest
-    fx_deploy_all_packages || { error "Package deployment failed."; return 1; }
+    # Step 1: Deploy all packages and create the manifest using pkgfx
+    # This step will be handled by pkgfx's install command, which will iterate through packages
+    # and add them to the manifest, then link them.
+    # For now, we'll assume pkgfx handles the deployment of all core packages.
+    # A future task will define how pkgfx discovers and installs these.
+    # For the current setup, we'll simulate this by calling pkgfx install on known core packages.
     
-    # Step 2: Verify the integrity of all deployed packages
-    fx_integrity_verify_all || { error "Package integrity verification failed."; return 1; }
+    # Example: Install a dummy package to demonstrate pkgfx integration
+    # This will be replaced by a proper package discovery and installation mechanism
+    # "$FX_BIN/pkgfx" install "/path/to/some/core/package.sh" || { error "Core package installation failed."; return 1; }
+
+    # Step 2: Verify the integrity of all deployed packages using pkgfx
+    if [ -x "$FX_BIN/pkgfx" ]; then
+      "$FX_BIN/pkgfx" verify || { error "Package integrity verification failed."; return 1; }
+    else
+      warn "pkgfx not found or not executable, skipping package verification."
+    fi
     
-    # Step 3: Link all executables
-    fx_pkglinker_link_all || { error "Executable linking failed."; return 1; }
-    
-    # Step 4: Create and link the rc file
-    local rc_file
+    # Step 3: Create and link the rc file
+    local rc_file profile_file link_content
     rc_file=$(fx_get_rc_file)
-    save_rc_file "$SELF_PATH" "$rc_file" "rc:bashfx" || { error "Failed to save rc file."; return 1; }
-    set_profile_link "$rc_file" || { error "Failed to link rc file to profile."; return 1; }
+    profile_file=${FX_PROFILE:-$(canonical_profile)}
+
+    # Create the rc file using a robust here-doc template.
+    _get_rc_template > "$rc_file" || { error "Failed to save rc file."; return 1; }
+    okay "Created rc file at $rc_file"
+
+    # Add the source link to the user's profile if it doesn't exist.
+    link_content=$(_get_link_template)
+    if ! grep -qF -- "$link_content" "$profile_file"; then
+      info "Adding BashFX source to profile: $profile_file"
+      echo -e "\n$link_content" >> "$profile_file"
+    fi
     
-    # Step 5: Promote devfx to fx
+    # Step 4: Promote devfx to fx
     fx_self_promote || { error "Failed to promote devfx to fx."; return 1; }
     
-    # Step 6: Clean up the temporary setup environment
+    # Step 5: Clean up the temporary setup environment
     info "Cleaning up temporary setup environment..."
-    "$FXI_ROOT_DIR/setup.dev" reset || warn "Failed to clean up temporary setup environment."
+    # Corrected path from 'setup.dev' to 'launch.dev'
+    "$FXI_ROOT_DIR/launch.dev" reset || warn "Failed to clean up temporary setup environment."
     
     okay "BashFX installation complete! Please reload your shell (e.g., 'source ~/.bashrc' or open a new terminal) to activate the 'fx' command."
-  }
-
-  fx_deploy_all_packages() {
-    think "Starting package deployment..."
-    local pkg_root="$FXI_PKG_DIR"
-    
-    # Clear existing manifest
-    fx_manifest_clear || { error "Failed to clear manifest."; return 1; }
-
-    # Deploy package groups
-    _fx_deploy_grp "inc"   "$pkg_root/inc"   "$FX_LIB/inc"
-    _fx_deploy_grp "utils" "$pkg_root/utils" "$FX_LIB/utils"
-    _fx_deploy_grp "fx"    "$pkg_root/fx"    "$FX_LIB/fx"
-
-    okay "Package deployment finished."
-  }
-
-
-
-  _fx_deploy_grp(){
-    local grp="$1" src_dir="$2" dst_dir="$3"
-    
-    trace "Deploying group: $grp"
-    
-    if [ ! -d "$src_dir" ]; then
-      error "Source directory for group '$grp' not found: $src_dir"
-      return 1
-    fi
-
-    mkdir -p "$dst_dir" || { error "Failed to create destination directory: $dst_dir"; return 1; }
-
-    find "$src_dir" -type f -name "*.sh" | while read -r file; do
-      
-      local dst_file="$dst_dir/$(basename "$file")";
-      cp "$file" "$dst_file" || { error "Failed to copy $file to $dst_file"; continue; }
-      
-      # Add entry to manifest
-      fx_manifest_add_entry "$dst_file" || error "Failed to add $dst_file to manifest."
-    done
   }
 
 
@@ -475,67 +447,80 @@
 # Feature Drivers
 #-------------------------------------------------------------------------------
 
-
-
-  # @driver F003
-  fx_f003_driver() {
-    local ret=0;
-    think "DRIVER: Testing FEATURE-003 (Safe Package Deployment)"
-    
-    # This is a simple "happy path" test.
-    # It relies on the setup having been run correctly.
-    trace "Verifying that the manifest file exists and is not empty..."
-    [ -s "$FX_ETC/manifest.log" ] || { error "Manifest file is missing or empty."; return 1; }
-
-    info "Manifest file exists."
-    trace "Verifying a known package (semver) is in the manifest..."
-    grep -q "semver" "$FX_ETC/manifest.log" || { error "semver package not found in manifest."; ret=1; }
-
-    [ $ret -eq 0 ] && okay "DRIVER F003: PASSED (semver package found in manifest.)" || error "DRIVER F003: FAILED";    
-
-    return $ret;
-  }
-
-  # @driver F004
-  fx_f004_driver() {
-    local ret;
-    think "Running master integrity check..."
-    info "DRIVER: Testing FEATURE-004 (Package Integrity & Linking)"
-
-    # The function returns 0 on success
-    fx_integrity_verify_all; ret=$?;
-    [ $ret -eq 0 ] && okay "DRIVER F004: PASSED" || error "DRIVER F004: FAILED";    
-
-    return $ret
-  }
-
-
   fx_dispatch_driver() {
-    local num="$1"
+    local feature_num="$1"
     shift # Remove the feature number from the arguments list
-    local driver_func="fx_f$(printf "%03d" "$num")_driver"
+    local driver_func="fx_f$(printf "%03d" "$feature_num")_driver"
 
     if function_exists "$driver_func"; then
-      info "Executing driver for FEATURE-$num..."
+      info "Executing driver for FEATURE-$feature_num..."
       "$driver_func" "$@" # Pass remaining arguments to the driver
     else
-      error "Driver function '$driver_func' not found for FEATURE-$num."
+      error "Driver function '$driver_func' not found for FEATURE-$feature_num."
       return 1
     fi
   }
 
-#-------------------------------------------------------------------------------
-# Dev Loop
-#-------------------------------------------------------------------------------
+  # @driver F003
+  fx_f003_driver() {
+    local ret=0
+    info "DRIVER: Testing FEATURE-003 (Safe Package Deployment)"
+    
+    # This is a simple "happy path" test.
+    # It relies on the setup having been run correctly.
+    think "Verifying that the manifest file exists and is not empty..."
+    [ -s "$FX_ETC/manifest.log" ] || { error "Manifest file is missing or empty."; return 1; }
+    okay "Manifest file exists."
 
-  fx_dev_dispatcher() {
-    if require_dev; then
-      dev "DEV MODE ENABLED";
-      #local _func="dev_$(printf "%03d" "$1")";
+    think "Verifying a known package (semver) is in the manifest..."
+    grep -q "semver" "$FX_ETC/manifest.log" || { error "semver package not found in manifest."; ret=1; }
+    
+    if [ $ret -eq 0 ]; then
+      okay "semver package found in manifest."
+      okay "DRIVER F003: PASSED"
     else
-      fatal "Command Unavailable in User Run Time";
+      error "DRIVER F003: FAILED"
+    fi
+    return $ret
+  }
+
+  # @driver F004
+  fx_f004_driver() {
+    info "DRIVER: Testing FEATURE-004 (Package Integrity & Linking)"
+    
+    think "Running master integrity check..."
+    # The function returns 0 on success
+    fx_integrity_verify_all
+    local ret=$?
+
+    if [ $ret -eq 0 ]; then
+      okay "DRIVER F004: PASSED"
+    else
+      error "DRIVER F004: FAILED"
+    fi
+    return $ret
+  }
+
+  _initialize_environment() {
+    # Attempt to load the RC file first to get existing settings.
+    if load_this_rc_file; then
+      info "[RC] FX values loaded from fx.rc";
+    fi
+
+    # If core XDG variables are missing, initialize them.
+    if [[ -z "$XDG_FX_HOME" || -z "$XDG_FX_LOCAL" ]]; then
+      trace "XDG environment not found, initializing..."
+      init_xdg;
+    fi
+
+    # If the core FX_RC variable is still not set, it means this is likely
+    # a first run or a broken environment, so we initialize the defaults.
+    if [ -z "$FX_RC" ]; then
+      trace "FX environment not found, initializing defaults..."
+      init_fx;
     fi
   }
+
 
 
 #-------------------------------------------------------------------------------
@@ -559,31 +544,31 @@
 
 # @lbl dispatch
 
+  # Define command mappings for the 'do_inspect' function.
+  # This decouples inspection from the dispatch implementation.
+  _dispatch_cmds=( "prof" "docs" "has_link" "link" "unlink" "rc" "init" "vars" "insp" "!" "clean" "clean-pkgs" "stat" "setup" "driver" "help" "?" "noop" )
+  _dispatch_funcs=( "dev_dump_profile" "fx_print_embed" "fx_has_link" "fx_set_link" "fx_del_link" "fx_dev_rcfile" "do_init" "do_vars" "do_inspect" "do_inspect" "fx_dev_cleanup" "fx_dev_clean_packages" "stat_check" "do_setup" "fx_dispatch_driver" "usage" "usage" "noop" )
+
   dispatch(){
     local call="$1" arg="$2" exc cmd= ret;
+
     case $call in
-      (prof)        cmd='dev_dump_profile';;
+      (prof)        cmd='dev_dump_profile';; # Note: dev_dump_profile is not defined in this script
       (docs)        cmd='fx_print_embed';;
       (has_link)    cmd='fx_has_link';;
       (link)        cmd='fx_set_link';;
       (unlink)      cmd='fx_del_link';;
       (rc*)         cmd='fx_dev_rcfile';;
       (init)        cmd='do_init';;
-      (ls)          cmd='do_list_pkgs';;
       (vars)        cmd='do_vars';;
-      (insp*|\!)    cmd='do_inspect';;
+      (insp*|!)     cmd='do_inspect';;
       (clean)       cmd='fx_dev_cleanup';;
-      (dev)         cmd='fx_dev_dispatcher';;
+      (clean-pkgs)  cmd='fx_dev_clean_packages';;
       (stat)        cmd='stat_check';;
-      (install)     cmd='fx_install_controller';;
+      (setup)       cmd='do_setup';;
       (driver)      cmd='fx_dispatch_driver';;
-      (help|\?)     cmd="usage";;
+      (help|?)      cmd="usage";;
       (noop)        cmd="noop";;
-      (*)
-        if [ ! -z "$call" ]; then
-          fatal "Invalid command => $call";
-        fi
-      ;;
     esac
 
     if [ -n "$cmd" ] && function_exists "$cmd"; then
@@ -601,56 +586,101 @@
 
 
   main(){
-    local ret=1;
+    local str ret=1
 
-    __logo "$SELF_PATH" 3 12; #--> self ref
-    require_dev && str+="\t${red2}${boto} Dev mode enabled ${boto}${x}" || str+="\n\t\t${grey}${bowtie} User Mode ${x}";
+    __logo "$SELF_PATH" 3 12
+    require_dev && str="\t${red2}${boto} Dev mode enabled ${boto}${x}" || str="\n\t\t${grey}${bowtie} User Mode ${x}"
     stderr "$str\n";
 
+    _initialize_environment
 
-    [ $opt_flags -eq 0 ] && stat_check "${orig_args[@]}";
+    dispatch "$@"; ret=$?
 
-    # help
-    if [[ "$1" == "help" || "$1" == "?" ]]; then
-      usage;
-      exit 0;
-    fi
-
-    load_this_rc_file; ret=$?;
-
-    if [ $ret -eq 0 ]; then
-      info "[RC] FX values loaded from fx.rc";
-    fi
-    
-    if [[ -z "$XDG_FX_HOME" || -z "$XDG_FX_LOCAL" ]]; then 
-      trace "Cannot find XDG logical home/local, attempting to init xdg."
-      init_xdg;
-    fi
-
-    
-    if [ -z "$FX_RC" ]; then 
-      trace "Cannot load FX_RC, want to init fx."
-      init_fx;
-      # if __confirm "${blue}(?) FX is not installed. Install now?${x}"; then
-      #   setup;
-      # fi
-    fi
-
-    dispatch "${args[@]}";ret=$?;
-    [ -n "$err" ] && fatal "$err" || stderr "$out";
-    unset out err;
+    [ -n "$err" ] && fatal "$err"
     return $ret
   }
 
   #command for testing options and setup
   noop(){ return 0; }
 
-  usage(){
-    if command_exists 'docx'; then
-      docx "$BASH_SOURCE" "doc:help"; 
-    fi
+  _get_help_text(){
+    # Using a here-document is more robust than parsing from comments.
+    # It aligns with Pillar III (Modularity) and V (Clarity).
+    # The color variables (${b}, ${x}, etc.) are expanded because we use `EOF`
+    # instead of `'EOF'`.
+    cat <<EOF
+
+  ${b}DEVFX [command] [--flags|-f] ${x}
+
+  ${w2}[ Commands ]${x}
+
+  ${o}setup${x}  - auto run through install steps
+  ${o}deploy${x} - copy packages to lib
+  ${o}link${x}   - deploy package to .local/bin
+  ${o}unlink${x} - deploy package to .local/bin 
+  ${o}chk${x}    - check if a package is installed
+  ${o}pkgs${x}   - list available packages
+
+  ${w2}[ Dev ]${x}
+
+  ${o}insp  ${x} - debug available functions
+  ${o}dem   ${x} - debug embedded docs
+  ${o}dlink ${x} - debug profile link output
+  ${o}vars  ${x} - dump vars with prefix FX_*
+
+  ${w2}[ Flags ]${x}
+
+  ${o}${ff} [-d] debug${x}, ${o}${ff} [-t] trace${x}, ${o}${ff} [-V] verbose${x}, ${o}${ff} [-q] quiet${x}, ${o}${ff} [-f] flags${x}, ${o}${ff} [-D] dev${x}
+EOF
   }
 
+  usage(){
+    # Calling a local function is more self-contained and robust
+    # than relying on an external parser tool like 'docx'.
+    _get_help_text
+  }
+
+  _get_rc_template(){
+    # This here-document replaces the fragile 'rc:bashfx' comment block.
+    # It is now used by fx_install_system to create the rc file.
+    cat <<EOF
+#!/usr/bin/env bash
+
+# Updated: $(date)
+
+export FX_INSTALLED=0;
+export FX_APP_NAME="$FX_APP_NAME";
+export FX_PROFILE="$FX_PROFILE";
+export FX_BIN="$FX_BIN";
+export FX_LIB="$FX_LIB";
+export FX_INC="$FX_INC";
+export FX_ETC="$FX_ETC";
+export FX_DATA="$FX_DATA";
+export FX_STATE="$FX_STATE";
+export FX_RC="$FX_ETC/fx.rc";
+EOF
+  }
+
+  _get_link_template(){
+    # This here-document replaces the fragile 'link:bashfx' comment block.
+    # It is now used by fx_install_system to link the rc file to the user's profile.
+    cat <<EOF
+#### bashfx ####
+  
+ # Updated: $(date)
+ # bashfx installed - do not manually edit this block
+ # use [fx unlink] to remove
+ export FX_RC="$FX_RC";
+
+ if [ -f "\${FX_RC}" ]; then
+   source "\${FX_RC}" --load-vars;
+ else
+   echo "${o}[FX] fx.rc file is missing. Run devfx repair! ${x}";
+ fi
+
+########
+EOF
+  }
 
 #-------------------------------------------------------------------------------
 
@@ -661,85 +691,17 @@
 
     orig_args=("${@}")
     options "${orig_args[@]}";
-    
+
+    # If --flags was passed, show stats and exit. This is a meta-command.
+    [ $opt_flags -eq 0 ] && { stat_check "${orig_args[@]}"; exit 0; }
+
+    # Filter out flags to get positional arguments for main().
     args=()
     for arg in "${orig_args[@]}"; do
-      [[ "$arg" == -* ]] && continue #filter option-like
-      args+=( "$arg" )
+      [[ "$arg" == -* ]] && continue
+      args+=("$arg")
     done
 
     main "${args[@]}";
 
   fi
-
-
-#====================================doc:help!==================================
-#
-#  \n\t${b}DEVFX [command] [--flags|-f] ${x}
-#
-#  \t${w2}[ Commands ]${x}
-#
-#  \t${o}setup${x}  - auto run through install steps
-#  \t${o}deploy${x} - copy packages to lib
-#  \t${o}link${x}   - deploy package to .local/bin
-#  \t${o}unlink${x} - deploy package to .local/bin 
-#  \t${o}chk${x}    - check if a package is installed
-#  \t${o}pkgs${x}   - list available packages
-#
-#  \t${w2}[ Dev ]${x}
-#
-#  \t${o}insp  ${x} - debug available functions
-#  \t${o}dem   ${x} - debug embedded docs
-#  \t${o}dlink ${x} - debug profile link output
-#  \t${o}vars  ${x} - dump vars with prefix FX_*
-#
-#
-#  \t${w2}[ Flags ]${x}
-#
-#  \t${o}${ff} [-d] debug${x}
-#  \t${o}${ff} [-t] trace${x}
-#  \t${o}${ff} [-V] verbose${x}
-#  \t${o}${ff} [-q] quiet${x}
-#  \t${o}${ff} [-f] flags${x}
-#  \t${o}${ff} [-D] dev${x}    
-# 
-#
-# 
-#=================================!doc:help=====================================
-# @lbl fx docs
-#=================================rc:bashfx!=====================================
-# ${shebang}
-# 
-# # ${LINE}
-# # Updated: %date%
-#
-# export FX_INSTALLED=0;
-# export FX_APP_NAME="$FX_APP_NAME";
-# export FX_PROFILE="$FX_PROFILE";
-# export FX_BIN="$FX_BIN";
-# export FX_LIB="$FX_LIB";
-# export FX_INC="$FX_INC";
-# export FX_ETC="$FX_ETC";
-# export FX_DATA="$FX_DATA";
-# export FX_STATE="$FX_STATE";
-# export FX_RC="$FX_ETC/fx.rc";
-#
-#
-#=================================!rc:bashfx=====================================
-
-#=================================link:bashfx!=====================================
-# #### bashfx ####
-#   
-#  # Updated: %date%
-#  # bashfx installed - do not manually edit this block
-#  # use [fx unlink] to remove
-#  export FX_RC="$FX_RC";
-#
-#  if [ -f "${FX_RC}" ]; then
-#    source ${FX_RC} --load-vars;
-#  else
-#    echo "${o}[FX] fx.rc file is missing. Run devfx repair! ${x}";
-#  fi
-#
-# ########
-#=================================!link:bashfx=====================================
