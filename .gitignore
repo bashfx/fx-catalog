@@ -1,4 +1,5 @@
 .fxsetuprc
+.fxlaunchrc
 .vscode
 .gemini
 *local*
@@ -6,3 +7,6 @@
 logs/*
 docs/man/*
 GEMINI*
+.git
+.bak
+tmp/

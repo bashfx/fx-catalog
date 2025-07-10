@@ -82,6 +82,92 @@
   fx_smart_source integrity  || exit 1
   fx_smart_source pkglinker  || exit 1
 
+
+#-------------------------------------------------------------------------------
+# Templates
+#-------------------------------------------------------------------------------
+
+
+  _get_help_text(){
+    # Using a here-document is more robust than parsing from comments.
+    # It aligns with Pillar III (Modularity) and V (Clarity).
+    # The color variables (${b}, ${x}, etc.) are expanded because we use `EOF`
+    # instead of `'EOF'`.
+    cat <<EOF
+
+  ${b}DEVFX [command] [--flags|-f] ${x}
+
+  ${w2}[ Commands ]${x}
+
+  ${o}setup${x}  - auto run through install steps
+  ${o}deploy${x} - copy packages to lib
+  ${o}link${x}   - deploy package to .local/bin
+  ${o}unlink${x} - deploy package to .local/bin 
+  ${o}chk${x}    - check if a package is installed
+  ${o}pkgs${x}   - list available packages
+
+  ${w2}[ Dev ]${x}
+
+  ${o}insp  ${x} - debug available functions
+  ${o}dem   ${x} - debug embedded docs
+  ${o}dlink ${x} - debug profile link output
+  ${o}vars  ${x} - dump vars with prefix FX_*
+
+  ${w2}[ Flags ]${x}
+
+  ${o}${ff} [-d] debug${x}, ${o}${ff} [-t] trace${x}, ${o}${ff} [-V] verbose${x}, ${o}${ff} [-q] quiet${x}, ${o}${ff} [-f] flags${x}, ${o}${ff} [-D] dev${x}
+EOF
+  }
+
+  usage(){
+    # Calling a local function is more self-contained and robust
+    # than relying on an external parser tool like 'docx'.
+    _get_help_text
+  }
+
+  _get_rc_template(){
+    # This here-document replaces the fragile 'rc:bashfx' comment block.
+    # It is now used by fx_install_system to create the rc file.
+    cat <<EOF
+#!/usr/bin/env bash
+
+# Updated: $(date)
+
+export FX_INSTALLED=0;
+export FX_APP_NAME="$FX_APP_NAME";
+export FX_PROFILE="$FX_PROFILE";
+export FX_BIN="$FX_BIN";
+export FX_LIB="$FX_LIB";
+export FX_INC="$FX_INC";
+export FX_ETC="$FX_ETC";
+export FX_DATA="$FX_DATA";
+export FX_STATE="$FX_STATE";
+export FX_RC="$FX_ETC/fx.rc";
+EOF
+  }
+
+  _get_link_template(){
+    # This here-document replaces the fragile 'link:bashfx' comment block.
+    # It is now used by fx_install_system to link the rc file to the user's profile.
+    cat <<EOF
+#### bashfx ####
+  
+ # Updated: $(date)
+ # bashfx installed - do not manually edit this block
+ # use [fx unlink] to remove
+ export FX_RC="$FX_RC";
+
+ if [ -f "\${FX_RC}" ]; then
+   source "\${FX_RC}" --load-vars;
+ else
+   echo "${o}[FX] fx.rc file is missing. Run devfx repair! ${x}";
+ fi
+
+########
+EOF
+  }
+
+
 #-------------------------------------------------------------------------------
 # 
 #-------------------------------------------------------------------------------
@@ -111,12 +197,14 @@
     # Apply hierarchical verbosity rules.
     # Higher levels of verbosity enable lower levels.
     [ "$opt_silly" -eq 0 ] && { opt_trace=0; opt_debug=0; }
-    [ "$opt_trace" -eq 0 ] && opt_debug=0
+    [ "$opt_trace" -eq 0 ] && { opt_debug=0; }
     [ "$opt_dev" -eq 0 ]   && { opt_debug=0; opt_flags=0; }
 
     # Final override: if quiet is on, it trumps all other verbosity.
     if [ "$opt_quiet" -eq 0 ]; then
       opt_debug=1; opt_trace=1; opt_silly=1;
+    else
+      warn "Quiet is $opt_quiet";
     fi
 
     [ -n "$err" ] && fatal "$err";
@@ -593,8 +681,8 @@
 
   main(){
     local str ret=1
-
-    __logo "$SELF_PATH" 3 12
+    think "loading main"
+    __logo "$SELF_PATH" 3 12;
     require_dev && str="\t${red2}${boto} Dev mode enabled ${boto}${x}" || str="\n\t\t${grey}${bowtie} User Mode ${x}"
     stderr "$str\n";
 
@@ -609,84 +697,7 @@
   #command for testing options and setup
   noop(){ return 0; }
 
-  _get_help_text(){
-    # Using a here-document is more robust than parsing from comments.
-    # It aligns with Pillar III (Modularity) and V (Clarity).
-    # The color variables (${b}, ${x}, etc.) are expanded because we use `EOF`
-    # instead of `'EOF'`.
-    cat <<EOF
 
-  ${b}DEVFX [command] [--flags|-f] ${x}
-
-  ${w2}[ Commands ]${x}
-
-  ${o}setup${x}  - auto run through install steps
-  ${o}deploy${x} - copy packages to lib
-  ${o}link${x}   - deploy package to .local/bin
-  ${o}unlink${x} - deploy package to .local/bin 
-  ${o}chk${x}    - check if a package is installed
-  ${o}pkgs${x}   - list available packages
-
-  ${w2}[ Dev ]${x}
-
-  ${o}insp  ${x} - debug available functions
-  ${o}dem   ${x} - debug embedded docs
-  ${o}dlink ${x} - debug profile link output
-  ${o}vars  ${x} - dump vars with prefix FX_*
-
-  ${w2}[ Flags ]${x}
-
-  ${o}${ff} [-d] debug${x}, ${o}${ff} [-t] trace${x}, ${o}${ff} [-V] verbose${x}, ${o}${ff} [-q] quiet${x}, ${o}${ff} [-f] flags${x}, ${o}${ff} [-D] dev${x}
-EOF
-  }
-
-  usage(){
-    # Calling a local function is more self-contained and robust
-    # than relying on an external parser tool like 'docx'.
-    _get_help_text
-  }
-
-  _get_rc_template(){
-    # This here-document replaces the fragile 'rc:bashfx' comment block.
-    # It is now used by fx_install_system to create the rc file.
-    cat <<EOF
-#!/usr/bin/env bash
-
-# Updated: $(date)
-
-export FX_INSTALLED=0;
-export FX_APP_NAME="$FX_APP_NAME";
-export FX_PROFILE="$FX_PROFILE";
-export FX_BIN="$FX_BIN";
-export FX_LIB="$FX_LIB";
-export FX_INC="$FX_INC";
-export FX_ETC="$FX_ETC";
-export FX_DATA="$FX_DATA";
-export FX_STATE="$FX_STATE";
-export FX_RC="$FX_ETC/fx.rc";
-EOF
-  }
-
-  _get_link_template(){
-    # This here-document replaces the fragile 'link:bashfx' comment block.
-    # It is now used by fx_install_system to link the rc file to the user's profile.
-    cat <<EOF
-#### bashfx ####
-  
- # Updated: $(date)
- # bashfx installed - do not manually edit this block
- # use [fx unlink] to remove
- export FX_RC="$FX_RC";
-
- if [ -f "\${FX_RC}" ]; then
-   source "\${FX_RC}" --load-vars;
- else
-   echo "${o}[FX] fx.rc file is missing. Run devfx repair! ${x}";
- fi
-
-########
-EOF
-  }
 
 #-------------------------------------------------------------------------------
 

@@ -31,10 +31,14 @@
 
 
   __logo(){
+    local logo;
     local src=$1 r1=${2:-3} r2=${3:-9};
+    warn 'trying logo';
     if [ -z "$opt_quiet" ] || [ $opt_quiet -eq 1 ]; then
-      local logo=$(sed -n "${r1},${r2} p" $src)
+      logo=$(sed -n "${r1},${r2} p" $src)
       printf "\n%b%s %s\n" "$blue" "${logo//#/ }" "$x" 1>&2;
+    else
+      warn "Logo was caught in quiet mode!";
     fi
   }
 

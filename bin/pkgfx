@@ -1,263 +1,212 @@
 #!/usr/bin/env bash
+#===============================================================================
+#  ________  ________  ________  ___  ___  ________ ___    ___ 
+# |\   __  \|\   __  \|\   ____\|\  \|\  \|\  _____\\  \  /  /|
+# \ \  \|\ /\ \  \|\  \ \  \___|\ \  \\\  \ \  \__/\ \  \/  / /
+#  \ \   __  \ \   __  \ \_____  \ \   __  \ \   __\\ \    / / 
+#   \ \  \|\  \ \  \ \  \|____|\  \ \  \ \  \ \  \_| /     \/  
+#    \ \_______\ \__\ \__\____\_\  \ \__\ \__\ \__\ /  /\   \  
+#     \|_______|\|__|\|__|\_________\|__|\|__|\|__|/__/ /\ __\ 
+#                        \|_________|              |__|/ \|__| 
 #
-# pkgfx
-#
-# This script is the dedicated package manager for BashFX.
-# It handles package installation, uninstallation, integrity verification, and linking.
-#
+#===============================================================================
+#-------------------------------------------------------------------------------
+#$ name: pkgfx
+#$ desc: BashFX Package Manager - manages installation, integrity, and linking of BashFX packages.
+#$ author: Shebang
+#$ semver: 0.1.0
+#$ alias: pkgfx
+#-------------------------------------------------------------------------------
+#=====================================code!=====================================
 
-# --- Logo Hack ---
-#
-#  ____ ____ _  _ ____ ____ _  _ 
-#  |__| |  | |\/| |___ |__/ |__| 
-#  |  | |__| |  | |___ |  \ |  | 
-#                                
-# -----------------
+  SELF_PATH="$0";
 
-# Set BASHFX_ROOT to the directory where this script is located.
-# This assumes pkgfx is in the bin/ directory relative to BASHFX_ROOT.
-export BASHFX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+  # --- BashFX Core Environment Bootstrap (Mimics devfx for robustness) ---
+  # This block ensures include.sh and thus stderr.sh are loaded, providing
+  # core utilities and logging. It prioritizes the installed FX_INC_DIR
+  # but falls back to the local development FXI_INC_DIR if not installed yet.
+  if [ -n "$FX_INC_DIR" ]; then
+    __inc_path="$FX_INC_DIR"; # Already installed BashFX environment
+  elif [ -n "$FXI_INC_DIR" ]; then
+    __inc_path="$FXI_INC_DIR"; # Launcher environment for initial setup
+  else
+    # Fallback to relative path if no environment variables are set.
+    # This should only happen if the script is run directly outside the framework.
+    __inc_path="$(dirname "${BASH_SOURCE[0]}")/../pkgs/inc";
+  fi
 
-# Source necessary libraries
-source "${BASHFX_ROOT}/pkgs/inc/escape.sh"
-source "${BASHFX_ROOT}/pkgs/inc/stderr.sh"
-source "${BASHFX_ROOT}/pkgs/inc/include.sh"
-source "${BASHFX_ROOT}/pkgs/inc/paths.sh"
-source "${BASHFX_ROOT}/pkgs/inc/package.sh"
-source "${BASHFX_ROOT}/pkgs/inc/pkglinker.sh"
-source "${BASHFX_ROOT}/pkgs/inc/manifest.sh"
-source "${BASHFX_ROOT}/pkgs/inc/integrity.sh"
-
-# Global variables for options
-opt_debug=0
-opt_trace=0
-opt_quiet=0
-opt_force=0
-opt_yes=0
-opt_dev=0
-
-# Function to parse command-line options
-options() {
-    local OPTIND
-    while getopts "dtqfyD" opt; do
-        case "${opt}" in
-            d) opt_debug=1 ;;
-            t) opt_trace=1 ;;
-            q) opt_quiet=1 ;;
-            f) opt_force=1 ;;
-            y) opt_yes=1 ;;
-            D) opt_dev=1; opt_debug=1; opt_trace=1 ;;
-            *) usage; return 1 ;;
-        esac
-    done
-    shift "$((OPTIND-1))"
-    return 0
-}
-
-# Function to display usage information
-usage() {
-    cat <<EOF >&2
-Usage: pkgfx [options] <command> [args...]
-
-Options:
-  -d    Enable debug output
-  -t    Enable trace output
-  -q    Suppress all output except errors
-  -f    Force operation
-  -y    Assume yes to all prompts
-  -D    Enable developer mode (implies -d and -t)
-
-Commands:
-  install <package_name>  Install a package
-  uninstall <package_name> Uninstall a package
-  verify <package_name>   Verify package integrity
-  list                    List installed packages
-  help                    Display this help message
-EOF
-    return 0
-}
-
-# Function to inspect available commands (for development/debugging)
-inspect() {
-    info "Available commands:"
-    grep -E '^(do_|fx_)' "${BASH_SOURCE[0]}" | sed 's/^\(do_\|fx_\)//;s/().*$//' | while read -r cmd; do
-        info "  ${cmd}"
-    
-    done
-    return 0
-}
-
-# Dispatch function to route commands
-dispatch() {
-    local cmd="$1"
-    shift || true
-
-    case "${cmd}" in
-        install) do_install "$@" ;;
-        uninstall) do_uninstall "$@" ;;
-        verify) do_verify "$@" ;;
-        list) do_list "$@" ;;
-        help) usage ;;
-        inspect) inspect ;;
-        *) error "Unknown command: ${cmd}"; usage; return 1 ;;
-    esac
-    return 0
-}
-
-# --- Command Implementations ---
-
-do_install() {
-    local pkg_id="$1" group pkg_name src_path dst_path
-
-    [ -z "$pkg_id" ] && { error "No package specified for installation."; return 1; }
-
-    # 1. Check if already installed
-    is_installed_pkg "$pkg_id"
-    [ $? -eq 0 ] && { okay "Package '$pkg_id' is already installed."; return 0; }
-
-    # 2. Validate package and get its source path
-    src_path=$(get_pkg_path "$pkg_id")
-    [ $? -ne 0 ] && { error "Package '$pkg_id' not found or invalid."; return 1; }
-    info "Found package source at: $src_path"
-
-    # 3. Parse group and name
-    case "$pkg_id" in
-      (*[:.]*) group="${pkg_id%%[:.]*}"; pkg_name="${pkg_id#*[:.]}" ;;
-      (*) error "Invalid package format. Use 'group.name'."; return 1 ;;
-    esac
-
-    # 4. Define destination and copy files
-    local dst_group_path="$FX_LIB/$group"
-    dst_path="$dst_group_path/$pkg_name"
-
-    info "Installing '$pkg_id' to '$dst_path'..."
-    mkdir -p "$dst_group_path" || { error "Failed to create destination group directory."; return 1; }
-
-    cp -R "$src_path/." "$dst_path/" || { error "Failed to copy package files."; return 1; }
-    okay "Package files copied successfully."
-
-    # 5. Link the executable
-    _link_pkg_executable "$group" "$pkg_name"
-}
-
-_link_pkg_executable() {
-    local group="$1" pkg_name="$2"
-    local installed_exec="$FX_LIB/$group/$pkg_name/pkg.sh"
-    local bin_link="$FX_BIN/$pkg_name"
-
-    if [ ! -f "$installed_exec" ]; then
-      note "Package '$pkg_name' has no executable (pkg.sh). Nothing to link."
-      return 0
-    fi
-
-    # Create symlink in bin/
-    info "Linking executable: $bin_link -> $installed_exec"
-    ln -s "$installed_exec" "$bin_link" || {
-      error "Failed to link $bin_link -> $installed_exec";
-      return 1
+  if [ -f "$__inc_path/include.sh" ]; then
+    source "$__inc_path/include.sh" || {
+      printf "FATAL: Could not load core BashFX libraries from %s/include.sh\n" "$__inc_path" >&2;
+      exit 1;
     }
+  else
+    printf "FATAL: Core BashFX include.sh not found at %s/include.sh\n" "$__inc_path" >&2;
+    exit 1;
+  fi
+  unset __inc_path;
 
-    okay "Package '$pkg_name' is now available in your PATH."
-}
 
-do_uninstall() {
-    local pkg_id="$1"
-    [ -z "$pkg_id" ] && { error "No package specified for uninstallation."; return 1; }
+  # --- Thisness Context & Namespace ---
+  # Defines the script's own context for generalized library functions.
+  __this_context() {
+    think "Setting this context [pkgfx]";
+    THIS_NAME="pkgfx";
+    THIS_ALIAS="pkgfx";
+    THIS_RC_NAME="pkgfx.rc"; # Although pkgfx might not have its own .rc, good to define
+    THIS_SELF="$SELF_PATH";
+    THIS_LABEL="bashfx.pkg"; # A more specific label
+    THIS_LINK_BLOCK="link:${THIS_LABEL}";
+    THIS_RC_BLOCK="rc:${THIS_LABEL}";
 
-    info "Uninstalling package: ${pkg_id}"
-    # Placeholder for actual uninstallation logic
-    # This will involve removing files from FX_LIB and unlinking from FX_BIN
-    return 0
-}
+    # Define pkgfx-specific paths (derived from BashFX XDG standard)
+    THIS_LIB_DIR="${FX_LIB}/fx/${THIS_ALIAS}"
+    THIS_ETC_DIR="${FX_ETC}/fx/${THIS_ALIAS}"
+    THIS_RC_FILE="${THIS_ETC_DIR}/${THIS_RC_NAME}"
+  }
+  __this_context # Set the context immediately
 
-do_verify() {
-    local pkg_id="$1"
-    [ -z "$pkg_id" ] && { error "No package specified for verification."; return 1; }
 
-    info "Verifying package: ${pkg_id}"
-    # Placeholder for actual verification logic
-    # For now, always return success to allow testing of install/uninstall flow
-    return 0
-}
+  # --- Standard Library Includes ---
+  # Source necessary BashFX libraries.
+  # Ensure they are loaded after include.sh (which brings stderr.sh)
+  fx_smart_source paths       || exit 1
+  fx_smart_source proflink    || exit 1 # For profile linking operations
+  fx_smart_source rcfile      || exit 1 # For managing .rc files
+  fx_smart_source template    || exit 1 # For parsing embedded documentation
+  fx_smart_source package     || exit 1 # For core package operations (list, check, install)
+  fx_smart_source manifest    || exit 1 # For managing the package manifest
+  fx_smart_source integrity   || exit 1 # For package integrity checks
+  fx_smart_source pkglinker   || exit 1 # For creating/removing package symlinks
 
-do_list() {
-    local this="$1"
-    local pkg_root="$FXI_PKG_DIR"
-    local pkg_path pkg
 
-    case "$this" in
-      (*[:.]*) group="${this%%[:.]*}"; pkg="${this#*[:.]}" ;;
-      (*) group="$this";;
-    esac
-
-    if [[ -z "$pkg_root" || ! -d "$pkg_root" ]]; then
-      error "[PKG] Invalid or unset FX_INIT_PKGS: $pkg_root"
-      return 1
+  # --- Core Initialization ---
+  # Initialize global FX_ paths based on XDG, if not already set.
+  _initialize_environment() {
+    if [ -z "$XDG_FX_HOME" ]; then # Checks if XDG is not initialized
+      trace "XDG environment not found, initializing..."
+      init_xdg; # From paths.sh
     fi
 
-    if [ -n "$group" ]; then
-      # List packages within a specific group
-      if [ ! -d "$pkg_root/$group" ]; then
-        error "[PKG] Group '$group' not found under $pkg_root"
-        return 1
-      fi
+    # Ensure core FX directories are set, even if pkgfx is run standalone.
+    # This mirrors init_fx from devfx for consistency.
+    export FX_APP_NAME="${FX_APP_NAME:-fx}";
+    export FX_BIN="${FX_BIN:-$XDG_FX_BIN/$FX_APP_NAME}";
+    export FX_LIB="${FX_LIB:-$XDG_FX_LIB/$FX_APP_NAME}";
+    export FX_INC="${FX_INC:-$FX_LIB/inc}"; # This one is important for internal calls
+    export FX_ETC="${FX_ETC:-$XDG_FX_CONFIG/$FX_APP_NAME/etc}";
+    export FX_DATA="${FX_DATA:-$XDG_FX_SHARE/$FX_APP_NAME}";
+    export FX_STATE="${FX_STATE:-$XDG_FX_STATE/$FX_APP_NAME}";
+    export FX_RC="${FX_RC:-${FX_ETC}/fx.rc}";
+    export FXI_PKG_DIR="${FXI_ROOT_DIR:-$(cd "$(dirname "$SELF_PATH")" && pwd)/pkgs}"; # For source packages
+  }
 
-      if [ -n "$pkg" ]; then
 
-        if [ ! -d "$pkg_root/$group/$pkg" ]; then
-          error "[PKG] Package '$pkg' not found under $group"
-          return 1
-        else
-          echo "$group.$pkg";
-        fi
+  # @lbl options
+  options(){
+    think "options()"
+    local this next opts=("${@}")
 
-      else
+    # Initialize standard flags to their 'off' state (1 = false)
+    opt_debug=1; opt_trace=1; opt_quiet=1; opt_force=1; opt_yes=1; opt_dev=1;
 
-        # Use the helper function to avoid code duplication
-        _list_packages_in_group "$group" "$pkg_root/$group"
-
-      fi
-    else
-      # List all group.pkg pairs
-      for group_path in "$pkg_root"/*; do
-        [ -d "$group_path" ] || continue
-        group=$(basename "$group_path")
-
-        # Use the helper function to avoid code duplication
-        _list_packages_in_group "$group" "$group_path"
-
-      done
-    fi
-}
-
-# Helper function: Lists packages within a given group directory
-# This generalizes the common logic for iterating and printing group.pkg.
-# Arguments:
-#   $1: group_name (e.g., "core", "util")
-#   $2: group_dir (absolute path to the group's directory)
-_list_packages_in_group() {
-    local group_name="$1"
-    local group_dir="$2"
-    local pkg_path pkg
-
-    for pkg_path in "$group_dir"/*; do
-      [ -d "$pkg_path" ] || continue # Skip non-directories
-      pkg=$(basename "$pkg_path")
-      echo "$group_name.$pkg"
+    for ((i=0; i<${#opts[@]}; i++)); do
+      this=${opts[i]}
+      case "$this" in
+        --force|-f)   opt_force=0 ;;
+        --debug|-d)   opt_debug=0 ;;
+        --trace|-t)   opt_trace=0; opt_debug=0 ;; # Trace enables debug
+        --quiet|-q)   opt_quiet=0 ;;
+        --yes|-y)     opt_yes=0 ;;
+        --dev|-D)     opt_dev=0; opt_trace=0; opt_debug=0 ;; # Dev enables trace and debug
+        --help|-h)    usage; exit 0 ;;
+        -*)           error "Invalid flag: $this"; return 1 ;;
+      esac
     done
-}
 
-# Main entry point
-main() {
-    options "$@" || return 1
-    local args=("$@")
-    if [[ "${#args[@]}" -eq 0 ]]; then
-        usage
-        return 1
+    # Apply hierarchical verbosity rules based on parsed options
+    [ "$opt_trace" -eq 0 ] && opt_debug=0 # Trace implies debug
+    [ "$opt_dev" -eq 0 ] && { opt_trace=0; opt_debug=0; } # Dev implies trace and debug
+
+    # Final override: if quiet is on, it trumps all other verbosity.
+    if [ "$opt_quiet" -eq 0 ]; then
+      opt_debug=1; opt_trace=1; opt_silly=1;
     fi
-    dispatch "${args[@]}"
-    return 0
-}
 
-# Execute main
-main "$@"
+    return 0
+  }
+
+
+  # @lbl dispatch
+  dispatch(){
+    think "dispatch()"
+    local cmd="$1"
+    shift # The rest of $@ are now arguments for the subcommand.
+
+    case "$cmd" in
+      list)           do_list_pkgs "$@" ;;
+      check)          do_check_pkg "$@" ;;
+      install)        do_install_pkg "$@" ;;
+      verify)         fx_integrity_verify_all "$@" ;;
+      link)           fx_pkglinker_link_by_alias "$@" ;;
+      unlink)         fx_pkglinker_unlink_by_alias "$@" ;;
+      clear-manifest) fx_manifest_clear "$@" ;; # New command for manifest.sh
+      help|-h|--help) usage "$@" ;;
+      "")             usage >&2; return 1 ;;
+      *)              error "Unknown command: '$cmd'"; usage >&2; return 1 ;;
+    esac
+    return $?
+  }
+
+
+  # @lbl main
+  main(){
+    think "main()"
+    _initialize_environment # Setup FX_ paths and XDG
+    
+    options "${orig_args[@]}" || exit 1 # Parse flags first
+
+    local args=()
+    for arg in "${orig_args[@]}"; do
+      [[ "$arg" == -* ]] && continue # Filter out flags
+      args+=("$arg")
+    done
+
+    # If no positional args are given after filtering flags, show usage.
+    [ ${#args[@]} -eq 0 ] && { usage; exit 0; }
+    
+    dispatch "${args[@]}" # Execute the command
+    return $?
+  }
+
+
+  # @lbl usage
+  usage(){
+    # This function prints the usage/help text using a here-document.
+    cat << EOF >&2
+  ${b}PKGFX [command] [options] ${x}
+
+  ${w2}[ Commands ]${x}
+
+  ${o}list [group.pkg]${x} - List available packages by group or a specific package.
+  ${o}check <pkg_id>${x}   - Validate if a package exists in the source repository.
+  ${o}install <pkg_id>${x} - Install a package (copies files, creates symlink).
+  ${o}verify${x}           - Verify the integrity of all installed packages.
+  ${o}link <alias>${x}     - Create a symlink for an installed package's executable.
+  ${o}unlink <alias>${x}   - Remove a symlink for an installed package's executable.
+  ${o}clear-manifest${x}  - Clear all entries from the package manifest.
+
+  ${w2}[ Flags ]${x}
+
+  ${o}${ff} [-d] debug${x}, ${o}${ff} [-t] trace${x}, ${o}${ff} [-q] quiet${x}, ${o}${ff} [-y] yes${x}, ${o}${ff} [-f] force${x}, ${o}${ff} [-D] dev${x}
+EOF
+  }
+
+
+# --- MAIN EXECUTION ---
+# This block ensures the script runs when executed, but not when sourced.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  orig_args=("${@}")
+  main "${orig_args[@]}"
+  exit $?
+fi

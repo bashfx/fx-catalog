@@ -36,7 +36,26 @@
     exit 1;
   fi
 
-#-------------------------------------------------------------------------------
+
+  # returns any available include directory - prioritizes user over init
+  fx_smart_inc(){
+    local res;
+    [ ! -n "$FX_INC_DIR" ] && [ ! -n "$FXI_INC_DIR" ] && {
+      error "[INC] cannot find a path for fxinc directory.";
+      return 1;
+    }
+    if [ -n "$FX_INC_DIR" ] && [ -d "$FX_INC_DIR" ]; then
+      res=$FX_INC_DIR; #installed with xdg paths
+    elif [ -n "$FXI_INC_DIR" ] && [ -d "$FXI_INC_DIR" ]; then
+      res=$FXI_INC_DIR;
+    else
+      error "[INC] cannot locate an fxinc directory.";
+      return 1;
+    fi
+    echo "$res";
+    return 0;
+  }
+
 
 
   # returns any available rc file - prioritizes user over init
@@ -63,24 +82,6 @@
 
 
 
-  # returns any available include directory - prioritizes user over init
-  fx_smart_inc(){
-    local res;
-    [ ! -n "$FX_INC_DIR" ] && [ ! -n "$FXI_INC_DIR" ] && {
-      error "[INC] cannot find a path for fxinc directory.";
-      return 1;
-    }
-    if [ -n "$FX_INC_DIR" ] && [ -d "$FX_INC_DIR" ]; then
-      res=$FX_INC_DIR; #installed with xdg paths
-    elif [ -n "$FXI_INC_DIR" ] && [ -d "$FXI_INC_DIR" ]; then
-      res=$FXI_INC_DIR;
-    else
-      error "[INC] cannot locate an fxinc directory.";
-      return 1;
-    fi
-    echo "$res";
-    return 0;
-  }
 
   # attempts to load a known inc location
   fx_smart_source() {
