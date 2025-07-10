@@ -31,14 +31,10 @@
 
 
   __logo(){
-    local logo;
     local src=$1 r1=${2:-3} r2=${3:-9};
-    warn 'trying logo';
     if [ -z "$opt_quiet" ] || [ $opt_quiet -eq 1 ]; then
-      logo=$(sed -n "${r1},${r2} p" $src)
+      local logo=$(sed -n "${r1},${r2} p" $src)
       printf "\n%b%s %s\n" "$blue" "${logo//#/ }" "$x" 1>&2;
-    else
-      warn "Logo was caught in quiet mode!";
     fi
   }
 
@@ -122,7 +118,8 @@
   __boltbox(){ __printbox "$1" "blue" "bolt"; }
   __docbox(){   __printbox "$1" "purple" "lambda"; }
   __errbox(){   __printbox "$1" "red" "none"; }
-
+  __devbox(){   __printbox "$1" "red2" "none"; }
+  
   # Robust confirmation prompt. Reads from the TTY to avoid consuming piped stdin.
   # Respects the --yes flag.
   __confirm() {
@@ -192,6 +189,12 @@
   }
 
   __flag(){ 
+    local flag=${1:-1} lbl=$2 color=;
+    [ $flag -eq 0 ] && icon=$flag_on && color=$green;
+    [ $flag -eq 1 ] && icon=$flag_off && color=$grey2;
+    [ -n "$lbl"   ] && lbl=" ${lbl}"; 
+    printf "%b%s%s%b" "$color" "$icon" "$lbl" $x;
+  } 
     local flag=${1:-1} lbl=$2 color=;
     [ $flag -eq 0 ] && icon=$flag_on && color=$green;
     [ $flag -eq 1 ] && icon=$flag_off && color=$grey2;

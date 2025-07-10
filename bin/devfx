@@ -18,30 +18,29 @@
 #-------------------------------------------------------------------------------
 #=====================================code!=====================================
 
-
+  # @ top
   
   SELF_PATH="$0";
 
 
   if [ -n "$FX_INC_DIR" ]; then
-    ___="$FX_INC_DIR"; #fx
+    _inc="$FX_INC_DIR"; #fx
   else
     if [ -z "$FXI_INC_DIR" ]; then
       #missing !
-      printf "BashFX Setup incomplete, missing include directory!";
+      printf "Environment is invalid, missing include directory!";
       exit 1;
     else
-      ___="$FXI_INC_DIR/include.sh"; #init
+      _inc="$FXI_INC_DIR/include.sh"; #init
+      FX_MODE='SETUP_PENDING';
     fi
   fi
-  source "$___";
-  unset ___;
+
+
+  source "$_inc"; unset _inc;
 
 
   fx_var_list=(FX_BIN FX_LIB FX_ETC FX_DATA FX_STATE FX_RC FX_APP_NAME);
-
-  # @lbl this context
-
 
   this_context_fx(){
     think "Setting this context [fx]";
@@ -177,8 +176,15 @@ EOF
   options(){
     # Using local ensures these variables don't leak into the global scope.
     local err
-    opt_debug=1; opt_quiet=1; opt_trace=1; opt_silly=1;
-    opt_yes=1; opt_dev=1; opt_flags=1;
+
+    #these can be overwritten
+    opt_debug=${opt_debug:-1};
+    opt_quiet=${opt_quiet:-1};
+    opt_trace=${opt_trace:-1};
+    opt_silly=${opt_silly:-1};
+    opt_yes=${opt_yes:-1};
+    opt_dev=${opt_dev:-1};
+    opt_flags=${opt_flags:-1};
 
     # Process arguments in a single loop for clarity and efficiency.
     for arg in "$@"; do
@@ -211,8 +217,12 @@ EOF
   }
 
 #-------------------------------------------------------------------------------
-# Embedded Docx
+#  Util Funcs
 #-------------------------------------------------------------------------------
+
+  #command for testing options and setup
+  noop(){ return 0; }
+
 
   is_empty_file(){
     local this=$1;
@@ -245,7 +255,6 @@ EOF
 #-------------------------------------------------------------------------------
 
 
-
   init_fx(){
     local app;
     if [ -z "$FX_RC" ]; then 
@@ -265,9 +274,9 @@ EOF
   }
 
 
-  ensure_fx_setup() {
+  ensure_fx_ready() {
     trace "[DIR] checking application directories...";
-    local this var val;
+    local this var;
 
     for var in "${fx_var_list[@]}"; do
 
@@ -302,9 +311,28 @@ EOF
 
 
 
-  do_init(){
-    init_fx;
+
+
+  _boot_session() {
+    # Attempt to load the RC file first to get existing settings.
+    if load_this_rc_file; then
+      info "[RC] FX values loaded from fx.rc";
+    fi
+
+    # If core XDG variables are missing, initialize them.
+    if [[ -z "$XDG_FX_HOME" || -z "$XDG_FX_LOCAL" ]]; then
+      trace "XDG environment not found, initializing..."
+      init_xdg;
+    fi
+
+    # If the core FX_RC variable is still not set, it means this is likely
+    # a first run or a broken environment, so we initialize the defaults.
+    if [ -z "$FX_RC" ]; then
+      trace "FX environment not found, initializing defaults..."
+      init_fx;
+    fi
   }
+
 
 
 #-------------------------------------------------------------------------------
@@ -325,7 +353,8 @@ EOF
   fx_has_link(){
     local rc ret=1;
     fx_link_cmd "has"; ret=$?; ret=$?;
-    [ $ret -eq 0 ] && okay "FX rc file found." || warn "FX link not found.";
+    [ $ret -eq 0 ] && { okay "FX link ound."; return 0; } || { warn "FX link not found."; return 1; }
+
     return $ret;
   }
 
@@ -333,7 +362,7 @@ EOF
   fx_del_link(){
     local rc ret=1;
     fx_link_cmd "del"; ret=$?;
-    [ $ret -eq 0 ] && info "FX rc link removed" || warn "FX rc already unlinked";
+    [ $ret -eq 0 ] && { info "FX rc link removed"; } || { warn "FX rc already unlinked"; }
     return $ret;
   }
 
@@ -341,12 +370,12 @@ EOF
   fx_set_link(){
     local rc ret=1;
     fx_link_cmd "add"; ret=$?;
-    [ $ret -eq 0 ] && info "FX link added to profile" || warn "Fx could not link to profile";
+    [ $ret -eq 0 ] && { info "FX link added to profile"; } || { warn "Fx could not link to profile"; }
     return $ret;
   }
 
   fx_link_cmd(){
-    local func call="$1" rc=${FX_RC:-=$(fx_get_rc_file)} ret=1;
+    local  call="$1" rc=${FX_RC:-=$(fx_get_rc_file)} ret=1;
     case $call in
       (has) cmd='has_profile_link' ;;
       (add) cmd='set_profile_link' ;;
@@ -375,7 +404,7 @@ EOF
 
   do_vars(){
     trace "Dumping debug vars";
-    local call="$1" arg="$2" cmd= ret;
+    local call="$1" arg="$2" cmd='' ret;
     case $call in
       (xdg)    env | grep '^XDG_FX_';;
       (fx)     env | grep '^FX_' | grep -v '^FX_INIT_' ;;
@@ -412,7 +441,8 @@ EOF
 
   fx_dev_cleanup(){
     think "Doing Dev cleanup...";
-    local rcfile=$(fx_get_rc_file); ret=$?;
+    local ret res rcfile;
+    rcfile=$(fx_get_rc_file); ret=$?;
     del_this_rc_file; ret=$?;
     fx_del_link;
     # optional remove fxi aliases
@@ -457,22 +487,23 @@ EOF
 # Setup
 #-------------------------------------------------------------------------------
   
-# @lbl setup
+# @lbl install
 
-  setup(){
-    local rc res ret=1;
+  fx_install(){
+    local ret=1;
     think "Setup starting....."
 
     this_context_fx;
     init_fx;
     fx_this_check;
 
-    if ensure_fx_setup; then
+    if ensure_fx_ready; then
       okay "System has valid paths.";
-      fx_install_system;
+      fx_unbox_system;
     else
       error "System paths are invalid.";
     fi
+    #needs return value
   }
 
   do_setup(){
@@ -480,8 +511,9 @@ EOF
     setup;
   }
 
-  fx_install_system(){
+  fx_unbox_system(){
     info "Installing BashFX system..."
+    local pkgman='';
     
     # Step 1: Deploy all packages and create the manifest using pkgfx
     # This step will be handled by pkgfx's install command, which will iterate through packages
@@ -495,6 +527,8 @@ EOF
     # "$FX_BIN/pkgfx" install "/path/to/some/core/package.sh" || { error "Core package installation failed."; return 1; }
 
     # Step 2: Verify the integrity of all deployed packages using pkgfx
+    pkgman="$FX_BIN/pkgfx" ;
+
     if [ -x "$FX_BIN/pkgfx" ]; then
       "$FX_BIN/pkgfx" verify || { error "Package integrity verification failed."; return 1; }
     else
@@ -595,25 +629,6 @@ EOF
     return $ret
   }
 
-  _initialize_environment() {
-    # Attempt to load the RC file first to get existing settings.
-    if load_this_rc_file; then
-      info "[RC] FX values loaded from fx.rc";
-    fi
-
-    # If core XDG variables are missing, initialize them.
-    if [[ -z "$XDG_FX_HOME" || -z "$XDG_FX_LOCAL" ]]; then
-      trace "XDG environment not found, initializing..."
-      init_xdg;
-    fi
-
-    # If the core FX_RC variable is still not set, it means this is likely
-    # a first run or a broken environment, so we initialize the defaults.
-    if [ -z "$FX_RC" ]; then
-      trace "FX environment not found, initializing defaults..."
-      init_fx;
-    fi
-  }
 
 
 
@@ -623,16 +638,15 @@ EOF
   
   stat_check(){
     local str prof;
-    prof=${FX_PROFILE:-$(standard_profile)};
-    
+    prof=${FX_PROFILE:-$(standard_profile)};ret=$?;
     str+="\t--> Input: ${white2}$1 $2 $3 $4 $5 $6 ${x}\n\n";
     str+="\t FX_RC: $FX_RC \n\n";
     str+="\t FX_PROFILE: $prof \n\n";
-    str+="\t$(__flag $opt_flags "stats [-f]")\n";
-    str+="\t$(__flag $opt_debug "debug [-d]")  \t$(__flag $opt_trace "trace [-t]")\n";
-    str+="\t$(__flag $opt_quiet "quiet [-q]")  \t$(__flag $opt_yes   "yes   [-y]")\n";
-    str+="\t$(__flag $opt_silly "silly [-V]")  \t$(__flag $opt_dev   "dev   [-D]")\n";  
-    quiet_off;
+    str+="\t$(__flag "$opt_flags" "stats [-f]")\n";
+    str+="\t$(__flag "$opt_debug" "debug [-d]")  \t$(__flag $opt_trace "trace [-t]")\n";
+    str+="\t$(__flag "$opt_quiet" "quiet [-q]")  \t$(__flag $opt_yes   "yes   [-y]")\n";
+    str+="\t$(__flag "$opt_silly" "silly [-V]")  \t$(__flag $opt_dev   "dev   [-D]")\n";  
+    quiet_off; #always print flags if requested even if quiet is on
     __boltbox "$str";
   }
 
@@ -644,7 +658,7 @@ EOF
   _dispatch_funcs=( "dev_dump_profile" "fx_print_embed" "fx_has_link" "fx_set_link" "fx_del_link" "fx_dev_rcfile" "do_init" "do_vars" "do_inspect" "do_inspect" "fx_dev_cleanup" "fx_dev_clean_packages" "stat_check" "do_setup" "fx_dispatch_driver" "usage" "usage" "noop" )
 
   dispatch(){
-    local call="$1" arg="$2" exc cmd= ret;
+    local call="$1" arg="$2"  cmd='' ret;
 
     case $call in
       (prof)        cmd='dev_dump_profile';; # Note: dev_dump_profile is not defined in this script
@@ -653,13 +667,12 @@ EOF
       (link)        cmd='fx_set_link';;
       (unlink)      cmd='fx_del_link';;
       (rc*)         cmd='fx_dev_rcfile';;
-      (init)        cmd='do_init';;
       (vars)        cmd='do_vars';;
       (insp*|!)     cmd='do_inspect';;
       (clean)       cmd='fx_dev_cleanup';;
       (clean-pkgs)  cmd='fx_dev_clean_packages';;
       (stat)        cmd='stat_check';;
-      (setup)       cmd='do_setup';;
+      (install)     cmd='fx_install';;
       (driver)      cmd='fx_dispatch_driver';;
       (help|?)      cmd="usage";;
       (noop)        cmd="noop";;
@@ -680,22 +693,20 @@ EOF
 
 
   main(){
-    local str ret=1
-    think "loading main"
-    __logo "$SELF_PATH" 3 12;
-    require_dev && str="\t${red2}${boto} Dev mode enabled ${boto}${x}" || str="\n\t\t${grey}${bowtie} User Mode ${x}"
+    local str ret=1;
+
+    __logo "$SELF_PATH" 3 12; ret=$?;
+
+    [ $opt_flags -eq 0 ] && { stat_check "${orig_args[@]}"; } # show status printout
+
+    require_dev && str="\t${red2}${boto} Dev mode enabled ${boto}${x}" || str="\n\t\t${grey}${bowtie} User Mode ${x}";
     stderr "$str\n";
-
-    _initialize_environment
-
+    _boot_session
     dispatch "$@"; ret=$?
 
     [ -n "$err" ] && fatal "$err"
     return $ret
   }
-
-  #command for testing options and setup
-  noop(){ return 0; }
 
 
 
@@ -706,11 +717,10 @@ EOF
     :
   else
 
+
     orig_args=("${@}")
     options "${orig_args[@]}";
 
-    # If --flags was passed, show stats and exit. This is a meta-command.
-    [ $opt_flags -eq 0 ] && { stat_check "${orig_args[@]}"; exit 0; }
 
     # Filter out flags to get positional arguments for main().
     args=()
