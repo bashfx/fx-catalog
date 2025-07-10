@@ -452,6 +452,12 @@
     shift # Remove the feature number from the arguments list
     local driver_func="fx_f$(printf "%03d" "$feature_num")_driver"
 
+    # Source the specific test driver file if it exists
+    local test_driver_file="$(dirname "${BASH_SOURCE[0]}")/../tests/test-pkgfx.sh" # Specific for FEATURE-007
+    if [ -f "$test_driver_file" ]; then
+      source "$test_driver_file"
+    fi
+
     if function_exists "$driver_func"; then
       info "Executing driver for FEATURE-$feature_num..."
       "$driver_func" "$@" # Pass remaining arguments to the driver
