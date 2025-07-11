@@ -149,7 +149,7 @@ This section covers the low-level "grammar" of a BashFX script: how things are n
 				- *silly* - for ridiculous log flagging and dumping of files when things arent working as expected.
 				  
 			- Dev Mode Set (fourth level `-D`)
-				- *dev* - dev only messages used in conjuction with `dev_required()`.
+				- *log_dev* - dev only messages used in conjuction with `dev_required()`.
 
 			- Additional custom loggers can be created and attached to the  level-specific option flag.
 				  

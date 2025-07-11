@@ -39,7 +39,6 @@
   }
 
 
-
   __printx() {
     local text=$1 color=$2 prefix=$3 stream=${4:-2}
     local color_code=${!color:-$white2}
@@ -71,7 +70,7 @@
   trace() { __log trace "$1"; }
   think() { __log think "$1"; }
   error() { __log error "$1"; }
-  dev()   { __log dev "$1"; }
+  log_dev()   { __log dev "$1"; }
 
 
   __printf(){
@@ -143,10 +142,10 @@
       __printf "${prompt} [y/n/q] > " "white2"
       read -r -n 1 answer < "$tty_dev"
       case "$answer" in
-        [Yy]) __printf "${bld}${green}yes${x}\n"; return 0 ;;
-        [Nn]) __printf "${bld}${red}no${x}\n"; return 1 ;;
-        [Qq]) __printf "${bld}${purple}quit${x}\n"; exit 1 ;;
-        *)    __printf "\n${yellow}Invalid input. Please try again.${x}\n" ;;
+        ([Yy]) __printf "${bld}${green}yes${x}\n"; return 0 ;;
+        ([Nn]) __printf "${bld}${red}no${x}\n"; return 1 ;;
+        ([Qq]) __printf "${bld}${purple}quit${x}\n"; exit 1 ;;
+        (*)    __printf "\n${yellow}Invalid input. Please try again.${x}\n" ;;
       esac
     done
   }
@@ -195,13 +194,7 @@
     [ -n "$lbl"   ] && lbl=" ${lbl}"; 
     printf "%b%s%s%b" "$color" "$icon" "$lbl" $x;
   } 
-    local flag=${1:-1} lbl=$2 color=;
-    [ $flag -eq 0 ] && icon=$flag_on && color=$green;
-    [ $flag -eq 1 ] && icon=$flag_off && color=$grey2;
-    [ -n "$lbl"   ] && lbl=" ${lbl}"; 
-    printf "%b%s%s%b" "$color" "$icon" "$lbl" $x;
-  }
-
+    
 
 #-------------------------------------------------------------------------------
 # Sig / Flow
