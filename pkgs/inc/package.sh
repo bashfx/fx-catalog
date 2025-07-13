@@ -7,6 +7,9 @@
 #-----------------------------><-----------------------------#
 #=====================================code!=====================================
 
+  echo "loaded package.sh" >&2;
+
+
 
   #TODO: Review
   _install_core_libs() {
@@ -41,7 +44,7 @@
 #-------------------------------------------------------------------------------
 
 
-  do_list_pkgs(){
+  do_list_available_pkgs(){
     local this="$1"
     local pkg_root="$FXI_PKG_DIR"
     local pkg_path pkg
@@ -89,6 +92,44 @@
 
       done
     fi
+  }
+
+  do_list_installed_pkgs(){
+    local filter="$1"
+    local manifest_file="${FX_ETC}/manifest.log"
+
+    if [ ! -f "$manifest_file" ] || [ ! -s "$manifest_file" ]; then
+      info "No packages installed (manifest is empty)."
+      return 0
+    fi
+
+    info "Listing installed packages:"
+    local line path alias group pkg_name path_minus_lib
+    while IFS= read -r line || [ -n "$line" ]; do
+      [[ -z "$line" || "$line" =~ ^# ]] && continue
+      path=$(echo "$line" | awk '{print $2}')
+      
+      path_minus_lib="${path#$FX_LIB/}"
+      
+      group=$(echo "$path_minus_lib" | cut -d/ -f1)
+      pkg_name=$(echo "$path_minus_lib" | cut -d/ -f2)
+
+      if [ -n "$group" ] && [ -n "$pkg_name" ]; then
+          if [ -n "$filter" ]; then
+              local filter_group="${filter%%[:.]*}"
+              local filter_pkg="${filter#*[:.]}"
+              if [ "$group" == "$filter_group" ]; then
+                  if [ -z "$filter_pkg" ] || [ "$filter_pkg" == "$group" ] || [ "$pkg_name" == "$filter_pkg" ]; then
+                       echo "$group.$pkg_name"
+                  fi
+              fi
+          else
+              echo "$group.$pkg_name"
+          fi
+      else
+          warn "Could not parse package ID from manifest line: $line"
+      fi
+    done < "$manifest_file" | sort -u
   }
 
 
@@ -199,7 +240,7 @@
 
 
   do_install_pkg(){
-    local pkg_id="$1" group pkg_name src_path dst_path
+    local pkg_id="$1" group pkg_name src_path dst_path alias
 
     [ -z "$pkg_id" ] && { error "No package specified for installation."; return 1; }
 
@@ -228,29 +269,80 @@
     cp -R "$src_path/." "$dst_path/" || { error "Failed to copy package files."; return 1; }
     okay "Package files copied successfully."
 
-    # 5. Link the executable
-    _link_pkg_executable "$group" "$pkg_name"
-  }
-
-  _link_pkg_executable() {
-    local group="$1" pkg_name="$2"
-    local installed_exec="$FX_LIB/$group/$pkg_name/pkg.sh"
-    local bin_link="$FX_BIN/$pkg_name"
-
-  
-    if [ ! -f "$installed_exec" ]; then
-      note "Package '$pkg_name' has no executable (pkg.sh). Nothing to link."
-      return 0
-    fi
-
-    # Create symlink in bin/
-    info "Linking executable: $bin_link -> $installed_exec"
-    ln -s "$installed_exec" "$bin_link" || {
-      error "Failed to link $bin_link -> $installed_exec";
-      return 1
+    # 5. Add to manifest
+    local installed_pkg_sh="$dst_path/$(basename $src_path).sh"
+    fx_manifest_add_entry "$installed_pkg_sh" || { 
+        error "Failed to add package to manifest. Rolling back file copy.";
+        rm -rf "$dst_path"; 
+        return 1; 
     }
 
-    okay "Package '$pkg_name' is now available in your PATH."
+    # 6. Link the executable
+    alias=$(_manifest_get_alias_from_source "$installed_pkg_sh")
+    [ -z "$alias" ] && alias=$pkg_name
+    fx_pkglinker_link_by_alias "$alias" || { 
+        error "Failed to link executable. Rolling back.";
+        fx_manifest_remove_entry "$installed_pkg_sh";
+        rm -rf "$dst_path";
+        return 1;
+    }
+
+    okay "Package '$pkg_id' installed and linked successfully."
+    return 0
+  }
+
+  # _link_pkg_executable() {
+  #   local group="$1" pkg_name="$2"
+  #   local installed_exec="$FX_LIB/$group/$pkg_name/pkg.sh"
+  #   local bin_link="$FX_BIN/$pkg_name"
+  # 
+  #   if [ ! -f "$installed_exec" ]; then
+  #     note "Package '$pkg_name' has no executable (pkg.sh). Nothing to link."
+  #     return 0
+  #   fi
+  # 
+  #   # Create symlink in bin/
+  #   info "Linking executable: $bin_link -> $installed_exec"
+  #   ln -s "$installed_exec" "$bin_link" || {
+  #     error "Failed to link $bin_link -> $installed_exec";
+  #     return 1
+  #   }
+  # 
+  #   okay "Package '$pkg_name' is now available in your PATH."
+  # }
+
+
+  do_uninstall_pkg(){
+    local pkg_id="$1" group pkg_name alias
+
+    [ -z "$pkg_id" ] && { error "No package specified for uninstallation."; return 1; }
+
+    # 1. Parse group and name
+    case "$pkg_id" in
+      (*[:.]*) group="${pkg_id%%[:.]*}"; pkg_name="${pkg_id#*[:.]}" ;;
+      (*) error "Invalid package format. Use 'group.name'."; return 1 ;;
+    esac
+
+    # 2. Check if installed
+    is_installed_pkg "$pkg_id"
+    [ $? -ne 0 ] && { error "Package '$pkg_id' is not installed."; return 1; }
+
+    # 3. Get the alias from the manifest
+    alias=$(_manifest_get_alias_from_source "$FX_LIB/$group/$pkg_name")
+    [ -z "$alias" ] && alias=$pkg_name
+
+    # 4. Unlink the executable
+    fx_pkglinker_unlink_by_alias "$alias" || return 1
+
+    # 5. Remove the package files
+    info "Removing package files from $FX_LIB/$group/$pkg_name..."
+    rm -rf "$FX_LIB/$group/$pkg_name" || { error "Failed to remove package files."; return 1; }
+
+    # 6. Remove from manifest
+    fx_manifest_remove_entry "$FX_LIB/$group/$pkg_name" || return 1
+
+    okay "Package '$pkg_id' uninstalled successfully."
+    return 0
   }
 
 

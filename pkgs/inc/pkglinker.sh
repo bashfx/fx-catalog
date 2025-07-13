@@ -5,6 +5,8 @@
 #$ desc: Manages symlinks for BashFX package executables.
 #===============================================================================
 
+  echo "loaded pkglinker.sh" >&2;
+
 # Note: This library assumes manifest.sh has been sourced.
 
 # --- Package Linker API ---

@@ -1,0 +1,293 @@
+#!/usr/bin/env bash
+#===============================================================================
+# 
+#  ________  ________  ________  ___  ___  ________ ___    ___ 
+# |\   __  \|\   __  \|\   ____\|\  \|\  \|\  _____\\  \  /  /|
+# \ \  \|\ /\ \  \|\  \ \  \___|\ \  \\\  \ \  \__/\ \  \/  / /
+#  \ \   __  \ \   __  \ \_____  \ \   __  \ \   __\\ \    / / 
+#   \ \  \|\  \ \  \ \  \|____|\  \ \  \ \  \ \  \_| /     \/  
+#    \ \_______\ \__\ \__\____\_\  \ \__\ \__\ \__\ /  /\   \  
+#     \|_______|\|__|\|__|\_________\|__|\|__|\|__|/__/ /\ __\ 
+#                        \|_________|              |__|/ \|__| 
+#                                    
+#===============================================================================
+#-------------------------------------------------------------------------------
+#$ name: engfx (rule compiler)
+#$ author: qodeninja 
+#$ semver: 0.0.0
+#-------------------------------------------------------------------------------
+#=====================================code!=====================================
+
+
+#-------------------------------------------------------------------------------
+# Bootstrap
+#-------------------------------------------------------------------------------
+
+
+  SELF_PATH="$0";
+
+
+  if [ -n "$FX_INC_DIR" ]; then
+    _inc="$FX_INC_DIR"; #fx
+  else
+    if [ -z "$FXI_INC_DIR" ]; then
+      #missing !
+      printf "Environment is invalid, missing include directory!";
+      exit 1;
+    else
+      _inc="$FXI_INC_DIR/include.sh"; #init
+      FX_MODE='SETUP_PENDING';
+    fi
+  fi
+
+  source "$_inc"; unset _inc;
+
+
+#-------------------------------------------------------------------------------
+# Core Includes
+#-------------------------------------------------------------------------------
+
+
+ # Use smart_source to load libraries
+  fx_smart_source paths    || exit 1
+  fx_smart_source proflink || exit 1
+  fx_smart_source rcfile   || exit 1
+  fx_smart_source template || exit 1
+
+
+#-------------------------------------------------------------------------------
+# Core Includes
+#-------------------------------------------------------------------------------
+
+status_err=()
+err_vals=()
+status_pass=()
+pass_vals=()
+state_config=()  #STATE_CONFIG_READY
+state_install=() #STATE_INSTALL_READY
+state_build=()   #STATE_BUILD_READY
+state_publish=() #STATE_PUBLISH_READY
+
+engine_props=()
+
+
+	run_engine(){
+		silly "Check Setup!"
+		unset status_err
+		unset err_vals
+		unset status_pass
+		unset pass_vals
+		check_each_state 0
+		lux_auto_repair
+		check_each_state 1
+	}
+
+	assertion_type(){
+		local code ret
+		code="$1"
+		ret="$2"
+		case "$1" in
+			*DEF*) this_atype="var"
+				[ $ret -eq 0 ] && this_res="${blue}def$x";
+				[ $ret -eq 1 ] && this_res="undef";
+				;;
+			*PATH*) this_atype='path'
+				[ $ret -eq 0 ] && this_res="${blue}inpath$x";
+				[ $ret -eq 1 ] && this_res="ninpath";
+				;;
+			*FILE*) this_atype='file'
+				[ $ret -eq 0 ] && this_res="${blue}exists$x";
+				[ $ret -eq 1 ] && this_res="dne";
+				;;
+			*LINK*) this_atype='link'
+				[ $ret -eq 0 ] && this_res="${blue}linked$x";
+				[ $ret -eq 1 ] && this_res="nlk";
+				;;
+			*DIR*) this_atype='dir'
+				[ $ret -eq 0 ] && this_res="${blue}exists$x";
+				[ $ret -eq 1 ] && this_res="dne";
+				;;
+			*WRITE*) this_atype='write'
+				[ $ret -eq 0 ] && this_res="${blue}writable$x";
+				[ $ret -eq 1 ] && this_res="nwa";
+				;;
+			*) this_atype='unk';;
+		esac
+	}
+
+  record_assertion(){
+		local ret val st val name
+		ret=$1;param=${!2}; st=$3; val="$4" name=$2;
+		[ $ret -eq 1 ] && { status_err+=( "$st" ); err_vals+=( "$name" ); } ||
+											{ status_pass+=( "$st" ); pass_vals+=( "$name:${val:-$param}" ); }
+		assertion_type $st $ret
+		if [ $test_only -eq 1 ]; then
+			[[ ! "$this_atype" =~ "var" ]]  && param="$this_res";
+			[ $ret -eq 1 ] && param="$grey2--$x" || :
+			[ $ret -eq 1 ] && this_stat="${fail} Fail$x" || this_stat="${pass} Pass$x"
+			printf -v "out" "| %-5s | %-5s | \$%-20s | %-60s $x$eol" "${this_stat}" "$this_atype" "$name" "$param"
+			__print "$out"
+		fi
+	}
+
+	 assert_defined(){
+		local ret this; this=${!1};
+		[ -z "$this" ] && ret=1 || ret=0; record_assertion $ret "$1" "$2"
+		return $ret
+	}
+	 assert_file(){
+		local ret this; this=${!1};
+		[ ! -f "$this" ] && ret=1 || ret=0; record_assertion $ret "$1" "$2" true
+		return $ret
+	}
+	 assert_dir(){
+		local ret this; this=${!1};
+		if [ -n "$this" ]; then
+		 [ ! -d "$this" ] && ret=1 || ret=0;
+		else
+			ret=1
+		fi
+		record_assertion $ret "$1" "$2" true
+		return $ret
+	}
+	 assert_inpath(){
+		local ret this; this=${!1};
+		if [ -n "$this" ]; then
+		 [[ ! "$PATH" =~ "$this" ]] && ret=1 || ret=0;
+		else
+			ret=1
+		fi
+		record_assertion $ret "$1" "$2" true
+		return $ret
+	}
+	 assert_writable(){
+		local ret this; this=${!1};
+		if [ -n "$this" ]; then
+			[ ! -w "$this" ] && ret=1 || ret=0;
+		else
+			ret=1
+		fi
+		record_assertion $ret "$1" "$2" truealias
+		return $ret
+	}
+
+	 assert_link(){
+		local this=$1
+		:
+	}
+
+	 assert_infile(){
+		local this=$1
+		:
+	}
+
+	 assert_ready(){
+		local this=$1
+		:
+	}
+
+	 assert_command(){
+		local ret this; this=${!1};
+
+		return $ret
+	}
+
+
+  check_each_state(){
+		test_only="${1:-1}"
+		[ $test_only -eq 0 ] && dtrace "TEST ONLY"
+		status_err=()
+		err_vals=()
+		status_pass=()
+		pass_vals=()
+		assert_defined  LUX_DEV_BIN    STATE_LUX_DBIN_DEF   ;
+		assert_inpath   LUX_DEV_BIN		 STATE_LUX_DBIN_PATH	;
+		assert_defined  BASH_PROFILE   STATE_BASH_PROF_DEF  ;
+		assert_defined  BASH_RC        STATE_BASH_RC_DEF    ;
+		assert_defined  LUX_RC         STATE_LUX_RC_DEF     ;
+		assert_file     LUX_RC         STATE_LUX_RC_FILE    ;
+		assert_defined  LUX_HOME  		 STATE_LUX_HOME_DEF   ;
+		assert_dir      LUX_HOME  		 STATE_LUX_HOME_DIR   ;
+		assert_defined  LUX_BUILD      STATE_LUX_BUILD_DEF  ;
+		assert_defined  LUX_DIST   	   STATE_LUX_DIST_DEF   ;
+		assert_defined  LUX_SEARCH_PATH  STATE_LUX_SRC_DEF  ;
+		assert_defined  LUX_CLI         STATE_LUX_CLI_DEF    ;
+		assert_dir      LUX_CLI         STATE_LUX_CLI_DIR    ;
+		assert_defined  BASH_USR_BIN    STATE_BASH_UBIN_DEF ;
+		assert_inpath   BASH_USR_BIN    STATE_BASH_UBIN_PATH;
+		assert_dir      BASH_USR_BIN    STATE_BASH_UBIN_DIR ;
+		assert_defined  LUX_INSTALL_DIR  STATE_LUX_INST_DEF ;
+		assert_writable LUX_INSTALL_DIR  STATE_LUX_INST_WRITE;
+		assert_defined  LUX_INSTALL_BIN  STATE_LUX_IBIN_DEF;
+		assert_file 		LUX_INSTALL_BIN  STATE_LUX_IBIN_FILE;
+		assert_link      BASH_PROFILE STATE_BASH_PROF_LINK;
+	}
+
+	fxe_run(){
+		noop "fxe run";
+	};
+
+	fxe_dispatch_driver(){
+		noop "fxe driver";
+	}
+#-------------------------------------------------------------------------------
+# BashFX Standard Interface
+#-------------------------------------------------------------------------------
+	usage(){
+		noop "fxe usage";
+	}
+
+
+  dispatch(){
+    local call="$1" arg="$2"  cmd='' ret;
+    case $call in
+		  (run)         cmd='fxe_run';;
+      (driver)      cmd='fxe_dispatch_driver';;
+      (help|?)      cmd="usage";;
+      (noop)        cmd="noop";;
+    esac
+
+    if [ -n "$cmd" ] && function_exists "$cmd"; then
+      shift # remove the command so we can pass the rest
+      "$cmd" "$@";   # Pass all extra arguments if cmd is defined
+      ret=$?;
+    else
+      __errbox "Dispatch error, could not find function ($cmd) for command ($call)";
+    fi
+    [ -n "$err" ] && fatal "$err";
+    echo -ne "\n\n";
+    return $ret;
+  }
+
+
+	main(){
+    local str ret=1;
+    [ $opt_flags -eq 0 ] && { stat_check "${orig_args[@]}"; } # show status printout
+    require_dev && str="\t${red2}${boto} Dev mode enabled ${boto}${x}" || str="\n\t\t${grey}${bowtie} User Mode ${x}";
+    stderr "$str\n";
+    dispatch "$@"; ret=$?;
+    [ -n "$err" ] && fatal "$err"
+    return $ret
+	}
+
+#-------------------------------------------------------------------------------
+# Invocation
+#-------------------------------------------------------------------------------
+
+  if [ "$0" = "-bash" ]; then
+    noop;
+  else
+
+    orig_args=("${@}")
+    options "${orig_args[@]}";
+
+    # Filter out flags to get positional arguments for main().
+    args=()
+    for arg in "${orig_args[@]}"; do
+      [[ "$arg" == -* ]] && continue
+      args+=("$arg")
+    done
+
+    main "${args[@]}";
+
+  fi

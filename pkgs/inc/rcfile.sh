@@ -7,7 +7,7 @@
 #-----------------------------><-----------------------------#
 #=====================================code!=====================================
 
-  echo "loaded rcfile.sh";
+  echo "loaded rcfile.sh" >&2;
 
   # LOCAL_LIB_DIR="$(dirname ${BASH_SOURCE[0]})";
   # source "${LOCAL_LIB_DIR}/stderr.sh";

@@ -9,21 +9,13 @@
 #-----------------------------><-----------------------------#
 #=====================================code!=====================================
   
-  echo "loaded stderr.sh";
+  echo "loaded stderr.sh" >&2;
   
   LOCAL_LIB_DIR="$(dirname ${BASH_SOURCE[0]})";
+  source "${LOCAL_LIB_DIR}/stdopts.sh";
   source "${LOCAL_LIB_DIR}/escape.sh";
 
-#-------------------------------------------------------------------------------
-# Utils
-#-------------------------------------------------------------------------------
-  
-  # __debug_mode(){ [ -z "$opt_debug" ] && return 1; [ $opt_debug -eq 0 ] && return 0 || return 1; }
-  # __quiet_mode(){ [ -z "$opt_quiet" ] && return 1; [ $opt_quiet -eq 0 ] && return 0 || return 1; }
-  opt_silly=${opt_silly:-1};
-  opt_trace=${opt_trace:-1};
-  opt_debug=${opt_debug:-1};
-  opt_yes=${opt_yes:-1};
+
 
 #-------------------------------------------------------------------------------
 # Printers

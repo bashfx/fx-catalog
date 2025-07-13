@@ -5,6 +5,10 @@
 #$ desc: Provides functions for package integrity checks.
 #===============================================================================
 
+
+  echo "loaded integrity.sh" >&2;
+
+
 # --- Integrity API ---
 
 fx_integrity_verify_all() {

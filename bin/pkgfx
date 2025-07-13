@@ -32,8 +32,10 @@
   else
     # Fallback to relative path if no environment variables are set.
     # This should only happen if the script is run directly outside the framework.
-    __inc_path="$(dirname "${BASH_SOURCE[0]}")/../pkgs/inc";
+    __inc_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../pkgs/inc";
   fi
+
+  export FX_INC_DIR="$__inc_path"
 
   if [ -f "$__inc_path/include.sh" ]; then
     source "$__inc_path/include.sh" || {
@@ -108,7 +110,7 @@
     local this next opts=("${@}")
 
     # Initialize standard flags to their 'off' state (1 = false)
-    opt_debug=1; opt_trace=1; opt_quiet=1; opt_force=1; opt_yes=1; opt_dev=1;
+    opt_debug=1; opt_trace=1; opt_quiet=1; opt_force=1; opt_yes=1; opt_dev=1; opt_installed=1;
 
     for ((i=0; i<${#opts[@]}; i++)); do
       this=${opts[i]}
@@ -119,6 +121,7 @@
         --quiet|-q)   opt_quiet=0 ;;
         --yes|-y)     opt_yes=0 ;;
         --dev|-D)     opt_dev=0; opt_trace=0; opt_debug=0 ;; # Dev enables trace and debug
+        --installed|-i) opt_installed=0 ;;
         --help|-h)    usage; exit 0 ;;
         -*)           error "Invalid flag: $this"; return 1 ;;
       esac
@@ -144,9 +147,16 @@
     shift # The rest of $@ are now arguments for the subcommand.
 
     case "$cmd" in
-      list)           do_list_pkgs "$@" ;;
+      list)
+        if [ "$opt_installed" -eq 0 ]; then
+          do_list_installed_pkgs "$@"
+        else
+          do_list_available_pkgs "$@"
+        fi
+        ;;
       check)          do_check_pkg "$@" ;;
       install)        do_install_pkg "$@" ;;
+      uninstall)      do_uninstall_pkg "$@" ;;
       verify)         fx_integrity_verify_all "$@" ;;
       link)           fx_pkglinker_link_by_alias "$@" ;;
       unlink)         fx_pkglinker_unlink_by_alias "$@" ;;
@@ -188,9 +198,10 @@
 
   ${w2}[ Commands ]${x}
 
-  ${o}list [group.pkg]${x} - List available packages by group or a specific package.
+  ${o}list [--installed] [group.pkg]${x} - List available or installed packages.
   ${o}check <pkg_id>${x}   - Validate if a package exists in the source repository.
   ${o}install <pkg_id>${x} - Install a package (copies files, creates symlink).
+  ${o}uninstall <pkg_id>${x} - Uninstall a package (removes files, symlink, and manifest entry).
   ${o}verify${x}           - Verify the integrity of all installed packages.
   ${o}link <alias>${x}     - Create a symlink for an installed package's executable.
   ${o}unlink <alias>${x}   - Remove a symlink for an installed package's executable.

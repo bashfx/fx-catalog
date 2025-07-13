@@ -171,57 +171,13 @@ EOF
 # 
 #-------------------------------------------------------------------------------
 
-# @lbl options
-
-  options(){
-    # Using local ensures these variables don't leak into the global scope.
-    local err
-
-    #these can be overwritten
-    opt_debug=${opt_debug:-1};
-    opt_quiet=${opt_quiet:-1};
-    opt_trace=${opt_trace:-1};
-    opt_silly=${opt_silly:-1};
-    opt_yes=${opt_yes:-1};
-    opt_dev=${opt_dev:-1};
-    opt_flags=${opt_flags:-1};
-
-    # Process arguments in a single loop for clarity and efficiency.
-    for arg in "$@"; do
-      case "$arg" in
-        --yes|-y)           opt_yes=0;;
-        --flag*|-f)         opt_flags=0;;
-        --debug|-d)         opt_debug=0;;
-        --tra*|-t)          opt_trace=0;;
-        --sil*|--verb*|-V)  opt_silly=0;;
-        --dev|-D)           opt_dev=0;;
-        --quiet|-q)         opt_quiet=0;;
-        -*)                 err="Invalid flag [$arg].";; # Capture unknown flags
-      esac
-    done
-
-    # Apply hierarchical verbosity rules.
-    # Higher levels of verbosity enable lower levels.
-    [ "$opt_silly" -eq 0 ] && { opt_trace=0; opt_debug=0; }
-    [ "$opt_trace" -eq 0 ] && { opt_debug=0; }
-    [ "$opt_dev" -eq 0 ]   && { opt_debug=0; opt_flags=0; }
-
-    # Final override: if quiet is on, it trumps all other verbosity.
-    if [ "$opt_quiet" -eq 0 ]; then
-      opt_debug=1; opt_trace=1; opt_silly=1;
-    else
-      warn "Quiet is $opt_quiet";
-    fi
-
-    [ -n "$err" ] && fatal "$err";
-  }
+# @info : options() moved to stdopts.sh as a general library function
 
 #-------------------------------------------------------------------------------
 #  Util Funcs
 #-------------------------------------------------------------------------------
 
-  #command for testing options and setup
-  noop(){ return 0; }
+
 
 
   is_empty_file(){
@@ -419,18 +375,6 @@ EOF
     return 0;
   }
 
-  #TODO:refactor for robustness
-  do_inspect(){
-    local i
-    xline
-    info "Available 'do_' functions:"
-    declare -F | grep 'do_' | awk '{print $3}'
-    xline
-    info "Available dispatch commands:"
-    for i in "${!_dispatch_cmds[@]}"; do
-      info "  ${_dispatch_cmds[i]} -> ${_dispatch_funcs[i]}"
-    done
-  }
 
   fx_dev_rcfile(){
     this_context_fx;
@@ -629,6 +573,98 @@ EOF
     return $ret
   }
 
+  # @driver F007
+  fx_f007_driver() {
+    info "DRIVER: Testing FEATURE-007 (pkgfx Package Manager)"
+    local ret=0
+    local test_pkg_id="fx.testpkg"
+    local devfx_dir
+    devfx_dir="$(dirname "${BASH_SOURCE[0]}")"
+    local pkgfx_cmd="${devfx_dir}/pkgfx"
+
+    # --- Environment Staging ---
+    think "Setting up a clean test environment..."
+    init_fx # Ensure temporary FX_* destination vars are set
+    ensure_fx_ready || { error "Failed to create temporary FX directories."; return 1; }
+
+    # Explicitly set the SOURCE directories for the test run
+    export FXI_ROOT_DIR
+    FXI_ROOT_DIR="$(cd "${devfx_dir}/.." && pwd)"
+    export FXI_PKG_DIR="${FXI_ROOT_DIR}/pkgs"
+    export FXI_INC_DIR="${FXI_PKG_DIR}/inc"
+    
+    # --- Pre-flight Check ---
+    think "Verifying test environment variables..."
+    trace "pkgfx command: ${pkgfx_cmd}"
+    trace "FXI_ROOT_DIR: ${FXI_ROOT_DIR}"
+    trace "FXI_PKG_DIR:  ${FXI_PKG_DIR}"
+    trace "FXI_INC_DIR:  ${FXI_INC_DIR}"
+    trace "FX_LIB:       ${FX_LIB}"
+    trace "FX_ETC:       ${FX_ETC}"
+    trace "FX_BIN:       ${FX_BIN}"
+    
+    # --- Test Execution ---
+    # 1. Install testpkg
+    think "STEP 1: Installing test package ('$test_pkg_id')..."
+    "$pkgfx_cmd" install "$test_pkg_id"
+    if [ $? -ne 0 ]; then
+      error "STEP 1 FAILED: Install command failed."
+      ret=1
+    else
+      okay "STEP 1 PASSED: Install command succeeded."
+    fi
+
+    # 2. List installed packages and verify testpkg is present
+    think "STEP 2: Verifying test package is listed as installed..."
+    if "$pkgfx_cmd" list --installed | grep -q "$test_pkg_id"; then
+      okay "STEP 2 PASSED: Test package found in --installed list."
+    else
+      error "STEP 2 FAILED: Test package not found in --installed list."
+      ret=1
+    fi
+
+    # 3. Verify package integrity
+    think "STEP 3: Verifying package integrity..."
+    if "$pkgfx_cmd" verify; then
+      okay "STEP 3 PASSED: Integrity check successful."
+    else
+      error "STEP 3 FAILED: Integrity check reported an error."
+      ret=1
+    fi
+
+    # 4. Uninstall testpkg
+    think "STEP 4: Uninstalling test package ('$test_pkg_id')..."
+    if "$pkgfx_cmd" uninstall "$test_pkg_id"; then
+      okay "STEP 4 PASSED: Uninstall command succeeded."
+    else
+      error "STEP 4 FAILED: Uninstall command failed."
+      ret=1
+    fi
+
+    # 5. List installed packages and verify testpkg is gone
+    think "STEP 5: Verifying test package is no longer listed..."
+    if ! "$pkgfx_cmd" list --installed | grep -q "$test_pkg_id"; then
+      okay "STEP 5 PASSED: Test package successfully removed from --installed list."
+    else
+      error "STEP 5 FAILED: Test package still found in --installed list after uninstall."
+      ret=1
+    fi
+
+    # --- Result ---
+    if [ $ret -eq 0 ]; then
+      okay "DRIVER F007: ALL STEPS PASSED"
+    else
+      error "DRIVER F007: ONE OR MORE STEPS FAILED"
+    fi
+
+    # --- Cleanup ---
+    think "Cleaning up test artifacts..."
+    fx_dev_clean_packages >/dev/null 2>&1
+    okay "Cleanup complete."
+
+    return $ret
+  }
+
 
 
 
@@ -654,8 +690,10 @@ EOF
 
   # Define command mappings for the 'do_inspect' function.
   # This decouples inspection from the dispatch implementation.
-  _dispatch_cmds=( "prof" "docs" "has_link" "link" "unlink" "rc" "init" "vars" "insp" "!" "clean" "clean-pkgs" "stat" "setup" "driver" "help" "?" "noop" )
-  _dispatch_funcs=( "dev_dump_profile" "fx_print_embed" "fx_has_link" "fx_set_link" "fx_del_link" "fx_dev_rcfile" "do_init" "do_vars" "do_inspect" "do_inspect" "fx_dev_cleanup" "fx_dev_clean_packages" "stat_check" "do_setup" "fx_dispatch_driver" "usage" "usage" "noop" )
+  #_dispatch_cmds=( "prof" "docs" "has_link" "link" "unlink" "rc" "init" "vars" "insp" "!" "clean" "clean-pkgs" "stat" "setup" "driver" "help" "?" "noop" )
+  #_dispatch_funcs=( "dev_dump_profile" "fx_print_embed" "fx_has_link" "fx_set_link" "fx_del_link" "fx_dev_rcfile" "do_init" "do_vars" "do_inspect" "do_inspect" "fx_dev_cleanup" "fx_dev_clean_packages" "stat_check" "do_setup" "fx_dispatch_driver" "usage" "usage" "noop" )
+
+  # do_inspect() moved to library as a general function
 
   dispatch(){
     local call="$1" arg="$2"  cmd='' ret;
