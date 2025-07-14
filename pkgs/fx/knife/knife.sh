@@ -16,7 +16,9 @@
 #-------------------------------------------------------------------------------
 #=====================================code!=====================================
 # Dev Note: This is an early alpha version and will need to refactored later.
-                                                         
+
+SELF_PATH="$0";
+
 #-------------------------------------------------------------------------------
 # Core Includes
 #-------------------------------------------------------------------------------
@@ -60,8 +62,9 @@ SED_INPLACE_OPT="" # Option for sed -i based on GNU/BSD
 # --- Globals ---
 KNIFE_DISABLE_HISTORY= #unused atm
 
-KNOWN_FILES_FILE="$HOME/.knife_known"
-HISTORY_FILE="$HOME/.knife_history"
+KNIFE_KNOWN_FILES="$HOME/.knife_known"
+KNIFE_HISTORY="$HOME/.knife_history"
+
 BACKUP_SUFFIX=".bak"
 
 # Safety and Development Modes
@@ -221,7 +224,7 @@ __check_file_exists_or_fail() {
 #-------------------------------------------------------------------------------
 
   strip_leading_comment() {
-    sed 's/^[[:space:]]*#[[:space:]]//'; #dont strip all whitesapce just maybe one
+    sed 's/^[[:space:]]*#[[:space:]]*//'; #dont strip all whitesapce just maybe one
   }
 
   escape_sed_replacement(){
@@ -520,12 +523,12 @@ _add_known_file() {
   fi
 
   # Check if an entry with the exact path AND content hash already exists
-  if grep -qE "^${canon_path}:${path_hash}:${content_hash}:${filename}$" "$KNOWN_FILES_FILE" 2>/dev/null; then
+  if grep -qE "^${canon_path}:${path_hash}:${content_hash}:${filename}$" "$KNIFE_KNOWN_FILES" 2>/dev/null; then
     knife_success
   else
     # Remove old entry if path exists but content has changed (or different hash)
-    "$SED_CMD" "$SED_INPLACE_OPT" "/^${canon_path}:/d" "$KNOWN_FILES_FILE" 2>/dev/null || true # `|| true` to suppress error if file doesn't exist
-    echo "${canon_path}:${path_hash}:${content_hash}:${filename}" >> "$KNOWN_FILES_FILE"
+    "$SED_CMD" "$SED_INPLACE_OPT" "/^${canon_path}:/d" "$KNIFE_KNOWN_FILES" 2>/dev/null || true # `|| true` to suppress error if file doesn't exist
+    echo "${canon_path}:${path_hash}:${content_hash}:${filename}" >> "$KNIFE_KNOWN_FILES"
     knife_success # Explicit success needed as echo might not guarantee
   fi
 }
@@ -534,9 +537,9 @@ _add_known_file() {
 
 __get_next_history_id() {
   local last_id="0" # Default to 0
-  if [[ -f "$HISTORY_FILE" && -s "$HISTORY_FILE" ]]; then # Check if file exists and is not empty
+  if [[ -f "$KNIFE_HISTORY" && -s "$KNIFE_HISTORY" ]]; then # Check if file exists and is not empty
     # Try to extract the last ID. Use awk for robustness as it handles empty files better.
-    last_id=$(awk -F: 'END {print $1}' "$HISTORY_FILE" 2>/dev/null)
+    last_id=$(awk -F: 'END {print $1}' "$KNIFE_HISTORY" 2>/dev/null)
     # Ensure it's numeric, otherwise fallback to 0
     if ! [[ "$last_id" =~ ^[0-9]+$ ]]; then
       last_id="0"
@@ -566,7 +569,7 @@ __log_history() {
     knife_fail
   fi
 
-  echo "${id}:${timestamp}:${cmd_type}:${cmd_params}:${vanity_filename}:${path_hash}:${content_hash}" >> "$HISTORY_FILE"
+  echo "${id}:${timestamp}:${cmd_type}:${cmd_params}:${vanity_filename}:${path_hash}:${content_hash}" >> "$KNIFE_HISTORY"
   # Removed redundant knife_success
 }
 
@@ -761,398 +764,375 @@ knife_inject() {
   knife_success
 }
 
-# knife delete <line_num> <file> (replaces with comment)
-knife_delete_line() {
-  local line_num="$1" file="$2"
-  __check_file_exists_or_fail "$file" || return 1
-  _backup_file "$file" || return 1
-  # Replace content of line_num with a comment to preserve line count and mark deletion
-  "$SED_CMD" "$SED_INPLACE_OPT" "${line_num}s/.*/#knife deleted line $(__format_timestamp "$(date +%s)")/" "$file"
-  __log_history "delete" "$line_num" "$file"
-  okay "Line ${line_num} in ${file} replaced with '#knife deleted line'."
-  knife_success
-}
-
-# knife extract <label> <file> (alias for block)
-knife_extract() {
-  knife_block "$@"
-}
-
-# knife meta <file>
-knife_meta() {
-  local file="$1"
-  __check_file_exists_or_fail "$file" || return 1
-  grep -E '^#\s*[A-Za-z_]+\s*:' "$file"
-  # Removed redundant knife_success
-}
-
-# knife metaget <key> <file>
-knife_metaget() {
-  local key="$1" file="$2"
-  __check_file_exists_or_fail "$file" || return 1
-  # Match key, extract content after first colon, remove leading/trailing whitespace and trailing semicolons
-  grep -E "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f2- | "$SED_CMD" -E 's/;\s*$//;s/^\s*//;s/\s*$//'
-  # Removed redundant knife_success
-}
-
-# knife metaset <key> <value> <file>
-knife_metaset() {
-  local key="$1" value="$2" file="$3"
-  __check_file_exists_or_fail "$file" || return 1
-  _backup_file "$file" || return 1
-  local marker_line_num=$(grep -nE "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f1)
-  if [[ -n "$marker_line_num" ]]; then
-    "$SED_CMD" "$SED_INPLACE_OPT" "${marker_line_num}s|^#\\s*${key}\\s*:.*|# ${key}: ${value}|" "$file"
-    okay "Updated meta key '${key}' in ${file}"
-  else
-    # Find the last # comment line in the file
-    local last_comment_line=$(grep -nE '^\s*#' "$file" | tail -n1 | cut -d: -f1)
-    if [[ -n "$last_comment_line" ]]; then
-      "$SED_CMD" "$SED_INPLACE_OPT" "${last_comment_line}a\\# ${key}: ${value}" "$file" # Append after last comment
-    else
-      echo "# ${key}: ${value}" >> "$file" # Append to end if no comments at all
-    fi
-    okay "Added meta key '${key}' to ${file}"
-  fi
-  __log_history "metaset" "${key}=${value}" "$file"
-  knife_success
-}
-
-# knife metadel <key> <file>
-knife_metadel() {
-  local key="$1" file="$2"
-  __check_file_exists_or_fail "$file" || return 1
-  local marker_line_num=$(grep -nE "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f1)
-  if [[ -n "$marker_line_num" ]]; then
+  # knife delete <line_num> <file> (replaces with comment)
+  knife_delete_line() {
+    local line_num="$1" file="$2"
+    __check_file_exists_or_fail "$file" || return 1
     _backup_file "$file" || return 1
-    "$SED_CMD" "$SED_INPLACE_OPT" "${marker_line_num}d" "$file"
-    __log_history "metadel" "${key}" "$file"
-    okay "Deleted meta key '${key}' from ${file}"
-  else
-    warn "Meta key '${key}' not found in ${file}."
+    # Replace content of line_num with a comment to preserve line count and mark deletion
+    "$SED_CMD" "$SED_INPLACE_OPT" "${line_num}s/.*/#knife deleted line $(__format_timestamp "$(date +%s)")/" "$file"
+    __log_history "delete" "$line_num" "$file"
+    okay "Line ${line_num} in ${file} replaced with '#knife deleted line'."
     knife_success
-  fi
-}
+  }
 
-# @trash : keeping this here for now until later clean up
-# knife logo <file>
-# knife_logo() {
-#   local file="$1"
-#   __check_file_exists_or_fail "$file" || return 1
+  # knife extract <label> <file> (alias for block)
+  knife_extract() {
+    knife_block "$@"
+  }
 
-#   # Look for logo markers
-#   local start_marker="### KNIFE_LOGO_START ###"
-#   local end_marker="### KNIFE_LOGO_END ###"
+  # knife meta <file>
+  knife_meta() {
+    local file="$1"
+    __check_file_exists_or_fail "$file" || return 1
+    grep -E '^#\s*[A-Za-z_]+\s*:' "$file"
+    # Removed redundant knife_success
+  }
 
-#   # Find line numbers of markers
-#   local start_line=$(grep -Fn "$start_marker" "$file" | cut -d: -f1 | head -n1)
-#   local end_line=$(grep -Fn "$end_marker" "$file" | cut -d: -f1 | head -n1)
+  # knife metaget <key> <file>
+  knife_metaget() {
+    local key="$1" file="$2"
+    __check_file_exists_or_fail "$file" || return 1
+    # Match key, extract content after first colon, remove leading/trailing whitespace and trailing semicolons
+    grep -E "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f2- | "$SED_CMD" -E 's/;\s*$//;s/^\s*//;s/\s*$//'
+    # Removed redundant knife_success
+  }
 
-#   if [[ -n "$start_line" && -n "$end_line" && "$start_line" -lt "$end_line" ]]; then
-#     # Print lines between markers (exclusive of markers themselves) and strip leading #
-#     awk -v start="$start_line" -v end="$end_line" 'NR > start && NR < end { sub(/^#+ ?/, ""); print }' "$file"
-#     # Removed redundant knife_success
-#   else
-#     info "No logo block found (or markers malformed) in ${file}. Expected '${start_marker}' to '${end_marker}'."
-#     knife_fail
-#   fi
-# }
-
-# @note : logo wont have marker sentinels you need to know which line numbers its on
-# @note : made this more general purpose as block by range n,m
-knife_block_range(){
-  local src=$1 r1=${2:-3} r2=${3:-9};
-  local logo=$(sed -n "${r1},${r2} p" $src)
-  printf "%s" "${logo//#/ }";
-}
-
-# knife copy <source_file> <num_lines> <output_file>
-knife_copy_lines() {
-  local file="$1" n="$2" out="$3"
-  __check_file_exists_or_fail "$file" || return 1
-  head -n "$n" "$file" > "$out"
-  okay "Copied first ${n} lines of ${file} to ${out}"
-  knife_success
-}
-
-# knife has <pattern> <file>
-knife_has() {
-  local pattern="$1" file="$2"
-  __check_file_exists_or_fail "$file" || return 1
-  if grep -qE "$pattern" "$file"; then
-    info "Pattern '${pattern}' found in ${file}."
-    knife_success
-  else
-    # Changed to error() as per feedback
-    error "Pattern '${pattern}' not found in ${file}."
-    knife_fail
-  fi
-}
-
-# knife show <pattern> <file>
-knife_show() {
-  local pattern="$1" file="$2"
-  __check_file_exists_or_fail "$file" || return 1
-  if ! grep -nE "$pattern" "$file"; then
-    info "No matches found for '${pattern}' in ${file}."
-  fi
-  # Removed redundant knife_success
-}
-
-# knife history [ :fields... | :all ] [file_query...]
-knife_history() {
-  local requested_fields=""
-  local file_query_arg=""
-  local field_map="id:0 time:1 cmd:2 params:3 vanity:4 path_hash:5 content_hash:6"
-  local -A headers=(
-    [id]="ID" [time]="Time"$'\t'$'\t' [cmd]="Command" [params]="Parameters"
-    [vanity]="File"$'\t' [path_hash]="PathHash" [content_hash]="ContentHash"
-  )
-
-  # Parse arguments: colon-prefixed fields followed by file_query
-  local arg
-  for arg in "$@"; do
-    if [[ "$arg" == :* ]]; then # It's a field argument
-      local field_name="${arg#:}" # Remove leading colon
-      if [[ "$field_name" == "all" ]]; then
-        requested_fields="id,time,cmd,params,vanity,path_hash,content_hash"
-        break # :all means no further field parsing
-      elif [[ "$field_map" =~ "${field_name}:" ]]; then
-        requested_fields="${requested_fields}${field_name},"
-      else
-        warn "Unknown field: ${field_name}. Skipping."
-      fi
-    else # It's part of the file query
-      if [[ -z "$file_query_arg" ]]; then
-        file_query_arg="$arg"
-      else
-        file_query_arg="${file_query_arg} ${arg}"
-      fi
-    fi
-  done
-
-  # Default fields if no fields specified and no query
-  if [[ -z "$requested_fields" && -z "$file_query_arg" ]]; then
-    requested_fields="time,cmd,vanity,path_hash" # Default for last operation
-  fi
-  requested_fields="${requested_fields%,}" # Trim trailing comma
-
-  local -a field_names=($(echo "$requested_fields" | tr ',' ' '))
-  local -a field_indices=()
-  local -a display_headers=()
-
-  # Map field names to indices and build display headers
-  local name index
-  for name in "${field_names[@]}"; do
-    index=$(echo "$field_map" | "$SED_CMD" -E "s/.*${name}:([0-9]).*/\1/")
-    if [[ -n "$index" ]]; then
-      field_indices+=("$index")
-      display_headers+=("${headers[$name]}")
-    fi
-  done
-
-  if [[ ! -f "$HISTORY_FILE" || ! -s "$HISTORY_FILE" ]]; then
-    info "No history found in ${HISTORY_FILE}."
-    knife_fail
-  fi
-
-  local output_data=""
-  local history_lines=""
-
-  # Determine if only the last line or all lines are processed
-  if [[ -z "$requested_fields" ]] && [[ -z "$file_query_arg" ]]; then
-    # Default: Show only the very last operation, for history file tail
-    history_lines=$(tail -n 1 "$HISTORY_FILE")
-  else
-    history_lines=$(cat "$HISTORY_FILE")
-  fi
-
-  local id_h time_h cmd_h params_h vanity_h path_hash_h content_hash_h
-  while IFS=':' read -r id_h time_h cmd_h params_h vanity_h path_hash_h content_hash_h; do
-    local keep_line=1
-
-    if [[ -n "$file_query_arg" ]]; then
-      # Filter by query (matches vanity filename or path hash)
-      if [[ ! "$vanity_h" =~ "$file_query_arg" && ! "$path_hash_h" =~ "$file_query_arg" ]]; then
-        keep_line=0
-      fi
-    fi
-
-    if [[ "$keep_line" -eq 1 ]]; then
-      local current_output=""
-      for ((j=0; j<${#field_indices[@]}; j++)); do
-        local field_idx="${field_indices[j]}"
-        local field_val=""
-        case "$field_idx" in
-          (0) field_val="$id_h" ;;
-          (1) field_val=$(__format_timestamp "$time_h") ;;
-          (2) field_val="$cmd_h" ;;
-          (3) field_val="$params_h" ;;
-          (4) field_val="$vanity_h" ;;
-          (5) field_val="$path_hash_h" ;;
-          (6) field_val="$content_hash_h" ;;
-        esac
-        # Append with actual tab character
-        current_output="${current_output}${field_val}"$'\t'
-      done
-      # Add newline. `column` needs the tabs, so no trailing tab removal.
-      output_data="${output_data}${current_output}"$'\n' 
-    fi
-  done <<< "$history_lines"
-
-  if [[ -z "$output_data" ]]; then
-    info "No history entries found matching your criteria."
-    knife_fail
-  else
-    # Print headers
-    printf "%s\t" "${display_headers[@]}" | "$SED_CMD" 's/\t$//' # Trim last tab
-    echo ""
-    # Print data using column for formatting, if available
-    if [[ -n "$COLUMN_CMD" ]]; then
-      printf "%s" "$output_data" | "$COLUMN_CMD" -s $'\t' -t # Use -s for tab, -t for table
+  # knife metaset <key> <value> <file>
+  knife_metaset() {
+    local key="$1" value="$2" file="$3"
+    __check_file_exists_or_fail "$file" || return 1
+    _backup_file "$file" || return 1
+    local marker_line_num=$(grep -nE "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f1)
+    if [[ -n "$marker_line_num" ]]; then
+      "$SED_CMD" "$SED_INPLACE_OPT" "${marker_line_num}s|^#\\s*${key}\\s*:.*|# ${key}: ${value}|" "$file"
+      okay "Updated meta key '${key}' in ${file}"
     else
-      printf "%s" "$output_data" # Raw tab-separated if column is missing
+      # Find the last # comment line in the file
+      local last_comment_line=$(grep -nE '^\s*#' "$file" | tail -n1 | cut -d: -f1)
+      if [[ -n "$last_comment_line" ]]; then
+        "$SED_CMD" "$SED_INPLACE_OPT" "${last_comment_line}a\\# ${key}: ${value}" "$file" # Append after last comment
+      else
+        echo "# ${key}: ${value}" >> "$file" # Append to end if no comments at all
+      fi
+      okay "Added meta key '${key}' to ${file}"
     fi
+    __log_history "metaset" "${key}=${value}" "$file"
     knife_success
-  fi
-}
+  }
 
-
-# knife search <pattern>
-knife_search_here() {
-  local pattern="$1"
-  local current_dir=$(pwd)
-
-  if _is_root_dir "$current_dir"; then
-    error "Searching in the root directory (/) is not allowed."
-    knife_fail
-  fi
-
-  local find_args=("-type" "f") # Only search files
-  local exclude_paths=()
-
-  # Build exclude paths for find -not -path
-  if [[ ${#KNIFE_EXCLUDES[@]} -gt 0 ]]; then
-    local exclude_item
-    for exclude_item in "${KNIFE_EXCLUDES[@]}"; do
-      exclude_paths+=("-o" "-path" "*/${exclude_item}/*")
-    done
-    # Remove the leading -o and group with NOT
-    unset 'exclude_paths[0]' # This is safe now because of the `if [[ ${#KNIFE_EXCLUDES[@]} -gt 0 ]]` check
-    exclude_paths=("!" "(" "${exclude_paths[@]}" ")")
-  fi
-
-  local search_depth=""
-  if ! _is_home_dir "$current_dir" && [[ -z "$DEV_MODE" ]]; then
-    search_depth="-maxdepth 1"
-    warn "Restricting search to current directory only. Set DEV_MODE or run from \$HOME for recursive search."
-  fi
-
-  info "Searching for '${pattern}' in files from ${current_dir}..."
-
-  # Build the find command arguments safely in an array
-  local -a find_cmd_args=("$current_dir")
-  if [[ -n "$search_depth" ]]; then
-    find_cmd_args+=("$search_depth")
-  fi
-  find_cmd_args+=("${find_args[@]}")
-  find_cmd_args+=("${exclude_paths[@]}")
-  
-  # Corrected -exec for grep
-  find_cmd_args+=("-exec" "grep" "-lE" "$pattern" "{}" "+")
-
-  # Execute the find command directly using the command path
-  local found_files
-  # Capture stderr to suppress `grep: command not found` etc. if sh -c has issues
-  found_files=$("$FIND_CMD" "${find_cmd_args[@]}" 2>/dev/null) # NOW USING FIND_CMD
-
-  if [[ -z "$found_files" ]]; then
-    info "No files found containing '${pattern}'."
-    knife_fail
-  else
-    echo "$found_files"
-    okay "Search complete. Found files containing '${pattern}'."
-    knife_success
-  fi
-}
-
-# knife cleanup
-knife_cleanup() {
-  local num_removed=0
-  local overall_success=0 # Tracks if at least one item was removed or if no issues occurred
-
-  if [[ -z "$DANGER_MODE" ]]; then
-    info "This will remove all Knife-related backups (.bak), split parts (.part1, .part2), and Knife's history/known files."
-    info "Are you sure you want to proceed? (y/N)"
-    read -r -p "Confirm: " response
-    if ! [[ "$response" =~ ^[Yy]$ ]]; then
-      error "Cleanup cancelled by user."
-      return 1
+  # knife metadel <key> <file>
+  knife_metadel() {
+    local key="$1" file="$2"
+    __check_file_exists_or_fail "$file" || return 1
+    local marker_line_num=$(grep -nE "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f1)
+    if [[ -n "$marker_line_num" ]]; then
+      _backup_file "$file" || return 1
+      "$SED_CMD" "$SED_INPLACE_OPT" "${marker_line_num}d" "$file"
+      __log_history "metadel" "${key}" "$file"
+      okay "Deleted meta key '${key}' from ${file}"
+    else
+      warn "Meta key '${key}' not found in ${file}."
+      knife_success
     fi
-  fi
+  }
 
-  # 1. Remove backup files based on known files list
-  info "Attempting to remove backup files (.bak)..."
-  if [[ -f "$KNOWN_FILES_FILE" ]]; then
-    local canon_path filename
-    # Loop through unique canonical paths in known files to find potential backups
-    # Use awk to get unique canonical paths (field 1) if there are duplicates due to hash changes
-    awk -F: '{print $1}' "$KNOWN_FILES_FILE" | sort -u | while read -r canon_path; do
-      local backup_file="${canon_path}${BACKUP_SUFFIX}"
-      if [[ -f "$backup_file" ]]; then
-        rm "$backup_file"
-        if [[ $? -eq 0 ]]; then
-          okay "Removed backup: ${backup_file}"
-          num_removed=$((num_removed + 1))
+
+  # @note : logo wont have marker sentinels you need to know which line numbers its on
+  # @note : made this more general purpose as block by range n,m
+  knife_block_range(){
+    local src=$1 r1=${2:-3} r2=${3:-9};
+    local logo=$(sed -n "${r1},${r2} p" $src)
+    printf "%s" "${logo//#/ }";
+  }
+
+  # knife copy <source_file> <num_lines> <output_file>
+  knife_copy_lines() {
+    local file="$1" n="$2" out="$3"
+    __check_file_exists_or_fail "$file" || return 1
+    head -n "$n" "$file" > "$out"
+    okay "Copied first ${n} lines of ${file} to ${out}"
+    knife_success
+  }
+
+  # knife has <pattern> <file>
+  knife_has() {
+    local pattern="$1" file="$2"
+    __check_file_exists_or_fail "$file" || return 1
+    if grep -qE "$pattern" "$file"; then
+      info "Pattern '${pattern}' found in ${file}."
+      knife_success
+    else
+      # Changed to error() as per feedback
+      error "Pattern '${pattern}' not found in ${file}."
+      knife_fail
+    fi
+  }
+
+  # knife show <pattern> <file>
+  knife_show() {
+    local pattern="$1" file="$2"
+    __check_file_exists_or_fail "$file" || return 1
+    if ! grep -nE "$pattern" "$file"; then
+      info "No matches found for '${pattern}' in ${file}."
+    fi
+    # Removed redundant knife_success
+  }
+
+  # knife history [ :fields... | :all ] [file_query...]
+  knife_history() {
+    local requested_fields=""
+    local file_query_arg=""
+    local field_map="id:0 time:1 cmd:2 params:3 vanity:4 path_hash:5 content_hash:6"
+    local -A headers=(
+      [id]="ID" [time]="Time"$'\t'$'\t' [cmd]="Command" [params]="Parameters"
+      [vanity]="File"$'\t' [path_hash]="PathHash" [content_hash]="ContentHash"
+    )
+
+    # Parse arguments: colon-prefixed fields followed by file_query
+    local arg
+    for arg in "$@"; do
+      if [[ "$arg" == :* ]]; then # It's a field argument
+        local field_name="${arg#:}" # Remove leading colon
+        if [[ "$field_name" == "all" ]]; then
+          requested_fields="id,time,cmd,params,vanity,path_hash,content_hash"
+          break # :all means no further field parsing
+        elif [[ "$field_map" =~ "${field_name}:" ]]; then
+          requested_fields="${requested_fields}${field_name},"
         else
-          warn "Failed to remove backup: ${backup_file}"
+          warn "Unknown field: ${field_name}. Skipping."
+        fi
+      else # It's part of the file query
+        if [[ -z "$file_query_arg" ]]; then
+          file_query_arg="$arg"
+        else
+          file_query_arg="${file_query_arg} ${arg}"
         fi
       fi
     done
-    overall_success=1 # At least attempted to remove backups
-  else
-    info "No known files to check for backups."
-  fi
 
-  # 2. Remove split part files (*.part1, *.part2) - search only in current dir and HOME subdirs
-  info "Attempting to remove split part files (*.part1, *.part2)..."
-  local deleted_count=0
-  # Use find with -delete which is more efficient
-  # Adding -maxdepth 3 as originally intended for this specific find
-  local found_and_deleted_count=$("$FIND_CMD" "$(pwd)" "$HOME" -maxdepth 3 -type f \( -name "*.part1" -o -name "*.part2" \) -print -delete 2>/dev/null | wc -l)
-  
-  if [[ "$found_and_deleted_count" -gt 0 ]]; then
-      okay "Removed ${found_and_deleted_count} split files."
-      num_removed=$((num_removed + found_and_deleted_count))
-      overall_success=1
-  else
-    info "No split part files found."
-  fi
-  
-  # 3. Remove Knife's internal state files
-  info "Attempting to remove Knife's internal state files..."
-  if [[ -f "$KNOWN_FILES_FILE" ]]; then
-    rm "$KNOWN_FILES_FILE"
-    if [[ $? -eq 0 ]]; then okay "Removed ${KNOWN_FILES_FILE}"; num_removed=$((num_removed + 1)); overall_success=1; else warn "Failed to remove ${KNOWN_FILES_FILE}"; fi
-  else
-    info "${KNOWN_FILES_FILE} not found."
-  fi
+    # Default fields if no fields specified and no query
+    if [[ -z "$requested_fields" && -z "$file_query_arg" ]]; then
+      requested_fields="time,cmd,vanity,path_hash" # Default for last operation
+    fi
+    requested_fields="${requested_fields%,}" # Trim trailing comma
 
-  if [[ -f "$HISTORY_FILE" ]]; then
-    rm "$HISTORY_FILE"
-    if [[ $? -eq 0 ]]; then okay "Removed ${HISTORY_FILE}"; num_removed=$((num_removed + 1)); overall_success=1; else warn "Failed to remove ${HISTORY_FILE}"; fi
-  else
-    info "${HISTORY_FILE} not found."
-  fi
+    local -a field_names=($(echo "$requested_fields" | tr ',' ' '))
+    local -a field_indices=()
+    local -a display_headers=()
 
-  if [[ "$overall_success" -eq 1 ]]; then
-    okay "Cleanup complete. Total files removed: ${num_removed}."
-    knife_success
-  else
-    info "Cleanup finished. No Knife-related files were found to remove."
-    knife_success # Still success if nothing was there to remove
-  fi
-}
+    # Map field names to indices and build display headers
+    local name index
+    for name in "${field_names[@]}"; do
+      index=$(echo "$field_map" | "$SED_CMD" -E "s/.*${name}:([0-9]).*/\1/")
+      if [[ -n "$index" ]]; then
+        field_indices+=("$index")
+        display_headers+=("${headers[$name]}")
+      fi
+    done
+
+    if [[ ! -f "$KNIFE_HISTORY" || ! -s "$KNIFE_HISTORY" ]]; then
+      info "No history found in ${KNIFE_HISTORY}."
+      knife_fail
+    fi
+
+    local output_data=""
+    local history_lines=""
+
+    # Determine if only the last line or all lines are processed
+    if [[ -z "$requested_fields" ]] && [[ -z "$file_query_arg" ]]; then
+      # Default: Show only the very last operation, for history file tail
+      history_lines=$(tail -n 1 "$KNIFE_HISTORY")
+    else
+      history_lines=$(cat "$KNIFE_HISTORY")
+    fi
+
+    local id_h time_h cmd_h params_h vanity_h path_hash_h content_hash_h
+    while IFS=':' read -r id_h time_h cmd_h params_h vanity_h path_hash_h content_hash_h; do
+      local keep_line=1
+
+      if [[ -n "$file_query_arg" ]]; then
+        # Filter by query (matches vanity filename or path hash)
+        if [[ ! "$vanity_h" =~ "$file_query_arg" && ! "$path_hash_h" =~ "$file_query_arg" ]]; then
+          keep_line=0
+        fi
+      fi
+
+      if [[ "$keep_line" -eq 1 ]]; then
+        local current_output=""
+        for ((j=0; j<${#field_indices[@]}; j++)); do
+          local field_idx="${field_indices[j]}"
+          local field_val=""
+          case "$field_idx" in
+            (0) field_val="$id_h" ;;
+            (1) field_val=$(__format_timestamp "$time_h") ;;
+            (2) field_val="$cmd_h" ;;
+            (3) field_val="$params_h" ;;
+            (4) field_val="$vanity_h" ;;
+            (5) field_val="$path_hash_h" ;;
+            (6) field_val="$content_hash_h" ;;
+          esac
+          # Append with actual tab character
+          current_output="${current_output}${field_val}"$'\t'
+        done
+        # Add newline. `column` needs the tabs, so no trailing tab removal.
+        output_data="${output_data}${current_output}"$'\n' 
+      fi
+    done <<< "$history_lines"
+
+    if [[ -z "$output_data" ]]; then
+      info "No history entries found matching your criteria."
+      knife_fail
+    else
+      # Print headers
+      printf "%s\t" "${display_headers[@]}" | "$SED_CMD" 's/\t$//' # Trim last tab
+      echo ""
+      # Print data using column for formatting, if available
+      if [[ -n "$COLUMN_CMD" ]]; then
+        printf "%s" "$output_data" | "$COLUMN_CMD" -s $'\t' -t # Use -s for tab, -t for table
+      else
+        printf "%s" "$output_data" # Raw tab-separated if column is missing
+      fi
+      knife_success
+    fi
+  }
+
+
+  # knife search <pattern>
+  knife_search_here() {
+    local pattern="$1"
+    local current_dir=$(pwd)
+
+    if _is_root_dir "$current_dir"; then
+      error "Searching in the root directory (/) is not allowed."
+      knife_fail
+    fi
+
+    local find_args=("-type" "f") # Only search files
+    local exclude_paths=()
+
+    # Build exclude paths for find -not -path
+    if [[ ${#KNIFE_EXCLUDES[@]} -gt 0 ]]; then
+      local exclude_item
+      for exclude_item in "${KNIFE_EXCLUDES[@]}"; do
+        exclude_paths+=("-o" "-path" "*/${exclude_item}/*")
+      done
+      # Remove the leading -o and group with NOT
+      unset 'exclude_paths[0]' # This is safe now because of the `if [[ ${#KNIFE_EXCLUDES[@]} -gt 0 ]]` check
+      exclude_paths=("!" "(" "${exclude_paths[@]}" ")")
+    fi
+
+    local search_depth=""
+    if ! _is_home_dir "$current_dir" && [[ -z "$DEV_MODE" ]]; then
+      search_depth="-maxdepth 1"
+      warn "Restricting search to current directory only. Set DEV_MODE or run from \$HOME for recursive search."
+    fi
+
+    info "Searching for '${pattern}' in files from ${current_dir}..."
+
+    # Build the find command arguments safely in an array
+    local -a find_cmd_args=("$current_dir")
+    if [[ -n "$search_depth" ]]; then
+      find_cmd_args+=("$search_depth")
+    fi
+    find_cmd_args+=("${find_args[@]}")
+    find_cmd_args+=("${exclude_paths[@]}")
+    
+    # Corrected -exec for grep
+    find_cmd_args+=("-exec" "grep" "-lE" "$pattern" "{}" "+")
+
+    # Execute the find command directly using the command path
+    local found_files
+    # Capture stderr to suppress `grep: command not found` etc. if sh -c has issues
+    found_files=$("$FIND_CMD" "${find_cmd_args[@]}" 2>/dev/null) # NOW USING FIND_CMD
+
+    if [[ -z "$found_files" ]]; then
+      info "No files found containing '${pattern}'."
+      knife_fail
+    else
+      echo "$found_files"
+      okay "Search complete. Found files containing '${pattern}'."
+      knife_success
+    fi
+  }
+
+  # knife cleanup
+  knife_cleanup() {
+    local num_removed=0
+    local overall_success=0 # Tracks if at least one item was removed or if no issues occurred
+
+    if [[ -z "$DANGER_MODE" ]]; then
+      info "This will remove all Knife-related backups (.bak), split parts (.part1, .part2), and Knife's history/known files."
+      info "Are you sure you want to proceed? (y/N)"
+      read -r -p "Confirm: " response
+      if ! [[ "$response" =~ ^[Yy]$ ]]; then
+        error "Cleanup cancelled by user."
+        return 1
+      fi
+    fi
+
+    # 1. Remove backup files based on known files list
+    info "Attempting to remove backup files (.bak)..."
+    if [[ -f "$KNIFE_KNOWN_FILES" ]]; then
+      local canon_path filename
+      # Loop through unique canonical paths in known files to find potential backups
+      # Use awk to get unique canonical paths (field 1) if there are duplicates due to hash changes
+      awk -F: '{print $1}' "$KNIFE_KNOWN_FILES" | sort -u | while read -r canon_path; do
+        local backup_file="${canon_path}${BACKUP_SUFFIX}"
+        if [[ -f "$backup_file" ]]; then
+          rm "$backup_file"
+          if [[ $? -eq 0 ]]; then
+            okay "Removed backup: ${backup_file}"
+            num_removed=$((num_removed + 1))
+          else
+            warn "Failed to remove backup: ${backup_file}"
+          fi
+        fi
+      done
+      overall_success=1 # At least attempted to remove backups
+    else
+      info "No known files to check for backups."
+    fi
+
+    # 2. Remove split part files (*.part1, *.part2) - search only in current dir and HOME subdirs
+    info "Attempting to remove split part files (*.part1, *.part2)..."
+    local deleted_count=0
+    # Use find with -delete which is more efficient
+    # Adding -maxdepth 3 as originally intended for this specific find
+    local found_and_deleted_count=$("$FIND_CMD" "$(pwd)" "$HOME" -maxdepth 3 -type f \( -name "*.part1" -o -name "*.part2" \) -print -delete 2>/dev/null | wc -l)
+    
+    if [[ "$found_and_deleted_count" -gt 0 ]]; then
+        okay "Removed ${found_and_deleted_count} split files."
+        num_removed=$((num_removed + found_and_deleted_count))
+        overall_success=1
+    else
+      info "No split part files found."
+    fi
+    
+    # 3. Remove Knife's internal state files
+    info "Attempting to remove Knife's internal state files..."
+    if [[ -f "$KNIFE_KNOWN_FILES" ]]; then
+      rm "$KNIFE_KNOWN_FILES"
+      if [[ $? -eq 0 ]]; then okay "Removed ${KNIFE_KNOWN_FILES}"; num_removed=$((num_removed + 1)); overall_success=1; else warn "Failed to remove ${KNIFE_KNOWN_FILES}"; fi
+    else
+      info "${KNIFE_KNOWN_FILES} not found."
+    fi
+
+    if [[ -f "$KNIFE_HISTORY" ]]; then
+      rm "$KNIFE_HISTORY"
+      if [[ $? -eq 0 ]]; then okay "Removed ${KNIFE_HISTORY}"; num_removed=$((num_removed + 1)); overall_success=1; else warn "Failed to remove ${KNIFE_HISTORY}"; fi
+    else
+      info "${KNIFE_HISTORY} not found."
+    fi
+
+    if [[ "$overall_success" -eq 1 ]]; then
+      okay "Cleanup complete. Total files removed: ${num_removed}."
+      knife_success
+    else
+      info "Cleanup finished. No Knife-related files were found to remove."
+      knife_success # Still success if nothing was there to remove
+    fi
+  }
 
   _destructive_guard(){
     local cmd="$1" file_arg="$2" confirm_path='' canon_confirm_path='';
@@ -1205,8 +1185,8 @@ knife_cleanup() {
   }
 
 
-# @note : stderr introduces new opt_file_arg as a fix for this mess. --file=path (refactor later)
-
+# note : stderr introduces new opt_file_arg as a fix for this mess. --file=path (refactor later)
+# todo : refactor this!
   _target_file(){
     local cmd="$1" file_arg='';
     # Determine file_arg based on NEW argument order
@@ -1232,6 +1212,15 @@ knife_cleanup() {
 
 
 
+
+
+  usage(){
+    noop;
+    get_embedded_doc "$SELF_PATH" "doc:help"; 
+    exit 1;
+  }
+
+
   dispatch(){
     local call="$1" arg="$2"  cmd=''file_arg='' ret;
 
@@ -1246,7 +1235,7 @@ knife_cleanup() {
           error "Unknown 'lines' subcommand: $1"; return 1; 
         fi
       ;;
-      (line) cmd='knife_line' ;; # 2args
+      (line)      cmd='knife_line' ;; # 2args
       (banner)    cmd='knife_banner'  ;; # 2args
       (block)     cmd='knife_block' ;; # 2args
       (blockr)    cmd='knife_block_range' ;; # 3args
@@ -1281,7 +1270,7 @@ knife_cleanup() {
       "$cmd" "$@";   # Pass all extra arguments if cmd is defined
       ret=$?;
     else
-      __errbox "Dispatch error, could not find function ($cmd) for command ($call)";
+      __errbox "[KN] Knife Dispatch Error, could not find function ($cmd) for command ($call)";
     fi
     [ -n "$err" ] && fatal "$err";
     echo -ne "\n\n";
@@ -1298,15 +1287,7 @@ knife_cleanup() {
     _danger_mode_guard;
 
     if [[ "$#" -eq 0 ]]; then
-      info "Usage: knife <command> [args...]"
-      info "Examples:"
-      info "  knife line 5 my_file.sh"
-      info "  knife setv MY_VAR new_value config.ini"
-      info "  knife history :time :vanity"
-      info "  knife history :all my_script.sh"
-      info "  knife search 'my_pattern'"
-      info "  knife cleanup"
-      exit 1
+      usage;
     fi
 
     dispatch "$@" # Dispatch the command and its arguments
@@ -1337,85 +1318,63 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 
 fi
 
+#-------------------------------------------------------------------------------
+#=====================================!code=====================================
 
 
-
-  _get_help_text(){
-    # Using a here-document is more robust than parsing from comments.
-    # It aligns with Pillar III (Modularity) and V (Clarity).
-    # The color variables (${b}, ${x}, etc.) are expanded because we use `EOF`
-    # instead of `'EOF'`.
-    cat <<EOF
-
-  ${b}KNIFE [command] [--flags|-f] ${x}
-
-  ${w2}[ Analysis ]${x}
-
-  ${o}line <n> <file>${x}      - print contents of file at line n
-  ${o}lines quick <file>${x}   - prints the number of lines in a file
-
-  ${o}has <str> <file>${x}     - boolean test if file has string (anywhere) 
-  ${o}show <str> <file>${x}    - show all lines in a file that match string (anywhere) 
-  ${o}search <strstring>${x}   - find all files in the current tree that match string
-
-  ${o}history <params>${x}     - find all files in the current dir tree that match string
-    available params :time :vanity :id :cmd :params :path_hash :content_hash (:all)
-
-
-  ${w2}[ Manipulation ]${x}
-  
-  ${o}delete <n> <file>${x}    - delete line N from file
-  ${o}split <n> <file>${x}     - split a file into two at line N
-  ${o}inject <src> <dest>${x}  - copies the contents of file B into file A, at every include banner.
-  ${o}copy <src> <n> <out>${x}  - copies n lines from src to out 
-  ${o}copyr <src> <n> <m> <out>${x} - copies range n-m lines from src to out 
-
-  ${o}block  <lbl> <file>${x}   - prints block of a file delim by labeled sentinels [alias=extract]
-  ${o}blockr <lbl> <file>${x}   - prints block of a file via line number range (inclusive)
-  ${o}logo   <file> <n> <m>${x} - alias of blockr
-
-  ${o}banner <lbl> <file>${x}   - print the banner of a file delim by a flag sentinel (WIP)
-
-
-
-  ${w2}[ Linking ]${x}
-
-  ${o}link <src> <target>${x}        - bind two files together (source), such that A loads B
-  ${o}unlink <src> <target>${x}      - remove the binding of two files
-  ${o}linked <src> <target>${x}      - check if two files are linked
-
-  ${w2}[ Embedded Vars ]${x}
-  ${o}meta    <file>${x}             - dump all comment meta values # key:val found in a file
-  ${o}metaget <key> <file>${x}       - print a single meta value by key (if it exists) (mult?)
-  ${o}metaset <key> <val> <file>${x} - add or set a meta value, in a file
-  ${o}metadel <key> <file>${x}       - del a meta value from a file (mult?) 
-
-  ${w2}[ Shell Vars ]${x}
-
-  ${o}getv <key> <file>${x}          - get the value(s) of a shell key found in a file
-  ${o}setv <key> <val> <file>${x}    - set a shell key in a file [alias=defv]
-  ${o}keys <file> ${x}               - list all shell keys in a file
-  ${o}val <str> <file> ${x}       - fuzzy search for keys with partial value in a file
-
-
-
-
-  ${o}history [ :fields... | :all ] [file_query...]${x} - 
-
-  ${o}cleanup${x}   ${x} 
-
-  ${o} ${x}  - 
-
-  ${w2}[ Dev ]${x}
-
-  ${o}insp  ${x} - debug available functions
-  ${o}dem   ${x} - debug embedded docs
-  ${o}dlink ${x} - debug profile link output
-  ${o}vars  ${x} - dump vars with prefix FX_*
-
-  ${w2}[ Flags ]${x}
-
-  ${o}${ff} [-d] debug${x}, ${o}${ff} [-t] trace${x}, ${o}${ff} [-V] verbose${x}, ${o}${ff} [-q] quiet${x}, ${o}${ff} [-f] flags${x}, ${o}${ff} [-D] dev${x}
-EOF
-  }
+#====================================doc:help!==================================
+# 
+#
+# 
+# \t\t\t${b2}KNIFE ${o}[command..]${x} [args..] [file..] [--flags|-f] ${x}
+#
+# \t\t\t   BashFX Text and File Manipulation Kit
+#
+# \t${w2}--> Arguments${x}
+# \t n   - number       | file      - target file for command | col - column parameter
+# \t n,m - range values | src, dest - file operation targets  | out - output file      
+# \t str - string text  | key ,val  - shell key or value 
+#
+# \t${w2}--> Analysis${x}
+# \t${o}line   ${u} <n> <file>${x}   - print contents of file at line
+# \t${o}lines  ${u}quick <file>${x}  - prints the number of lines in a file
+# \t${o}has    ${u}<str> <file>${x}  - boolean test if file has string (anywhere) 
+# \t${o}show   ${u}<str> <file>${x}  - show all lines in a file that match string (anywhere) 
+# \t${o}search ${u}<str>${x}         - find all files in the current tree that match string
+#
+# \t${o}history ${u}<col> [file]${x} - find all files in the current dir tree that match string
+# \t                      ${u2}:time :vanity :id :cmd :params :path_hash :content_hash (:all)
+#
+# \t${w2}--> Manipulation${x} 
+# \t${o}delete ${u} <n> <file>${x}   - delete line N from file
+# \t${o}split  ${u}<n> <file>${x}    - split a file into two at line N
+# \t${o}inject ${u}<src> <dest>${x}  - copies the contents of file B into file A, at every include banner.
+# \t${o}copy   ${u}<src> <n> <out>${x}  - copies n lines from src to out 
+# \t${o}block  ${u}<lbl> <file>${x}   - prints block of a file delim by labeled sentinels [alias=extract]
+# \t${o}blockr ${u}<lbl> <file>${x}   - prints block of a file via line number range (inclusive)
+# \t${o}logo   ${u}<file> <n> <m>${x} - alias of blockr
+#
+# \t${w2}--> Linking${x}
+# \t${o}link   ${u}<src> <dest>${x}  - bind two files together (source), such that A loads B
+# \t${o}unlink ${u}<src> <dest>${x}  - remove the binding of two files
+# \t${o}linked ${u}<src> <dest>${x}  - check if two files are linked
+#
+# \t${w2}--> Embedded Vars${x}
+# \t${o}meta    ${u}<file>${x}             - dump all comment meta values # key:val found in a file
+# \t${o}metaget ${u}<key> <file>${x}       - print a single meta value by key (if it exists) (mult?)
+# \t${o}metaset ${u}<key> <val> <file>${x} - add or set a meta value, in a file
+# \t${o}metadel ${u}<key> <file>${x}       - del a meta value from a file (mult?) 
+#
+# \t${w2}--> Shell Vars${x}
+# \t${o}getv  ${u}<key> <file>${x}          - get the value(s) of a shell key found in a file
+# \t${o}setv  ${u}<key> <val> <file>${x}    - set a shell key in a file [alias=defv]
+# \t${o}keys  ${u}<file> ${x}               - list all shell keys in a file
+# \t${o}val   ${u}<str> <file> ${x}         - fuzzy search for keys with partial value in a file
+#
+# \t${w2}--> Misc${x}
+# \t${o}cleanup${x}                     - remove all artifacts created by knife
+#
+# \t${r}banner <lbl> <file>         - print the banner of a file delim by a flag sentinel (WIP)${x}
+# \t${r}copyr  <src> <n> <m> <out>  - copies range n-m lines from src to out ${x}
+#=================================!doc:help=====================================
 
