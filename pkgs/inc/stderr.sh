@@ -218,4 +218,3 @@
   trap handle_input CONT
   trap fin EXIT
 
- echo "STDERR loaded with debug ($opt_dev)"

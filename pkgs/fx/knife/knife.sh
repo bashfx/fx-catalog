@@ -1176,12 +1176,16 @@ knife_cleanup() {
             error "Operation cancelled by user."
             return 1 # Return failure to dispatch, which will propagate
           fi
+          warn "[KN] User accepted potential destructive changes check.";
+          # user accepted
+          return 0;
         fi
 
       fi
 
     fi
-    return 0;
+    info "[KN] Passed destructive changes check. (Safe)";
+    return 1; #not a destructive command
   }
 
   _danger_mode_guard(){
@@ -1205,15 +1209,15 @@ knife_cleanup() {
 
   _target_file(){
     local cmd="$1" file_arg='';
-    # Determine target_file_for_prompt based on NEW argument order
+    # Determine file_arg based on NEW argument order
     case "$cmd" in
       (line|delete|split|has|show) file_arg="$2" ;; # <arg1> <file>
       (banner|block|meta|logo|lines|extract|keys|val) file_arg="$1" ;; # <label> <file> or <file> for meta/logo/keys/val
       (find) 
           if [[ "$arg1" == "key" ]]; then  # find <type> <file> or find <type> <key> <file>
-            target_file_for_prompt="$3"; # find key KEY FILE
+            file_arg="$3"; # find key KEY FILE
           elif [[ "$arg1" == "values" ]]; 
-          then target_file_for_prompt="$2"; # find values FILE
+          then file_arg="$2"; # find values FILE
           fi ;;
       (setv|defv) file_arg="$3" ;; # <key> <value> <file>
       (getv) file_arg="$2" ;; # <key> <file>
@@ -1227,93 +1231,8 @@ knife_cleanup() {
   }
 
 
-# @todo : this needs a major refactor LOL
 
-  # Centralized command dispatch
-  dispatch() {
-    local cmd="$1"
-    shift # Remove cmd from $@
-
-    local arg1="$1" arg2="$2" arg3="$3" # Capture up to 3 arguments. History can take more, handled specifically.
-
-    local target_file_for_prompt="" # Used only for safety prompt context
-
-    file_arg=$(_target_file "$cmd" "$@");
-
-    # Safety Guard for Destructive Operations
-    # Check if command is destructive AND if a target file was identified (or if it's cleanup)
-    # if _is_destructive_command "$cmd"; then # Check if the command *type* is destructive
-    #   local confirm_path="$target_file_for_prompt"
-    #   if [[ "$cmd" == "cleanup" ]]; then
-    #     confirm_path="$HOME" # Cleanup operates broadly, so use HOME as reference for prompt
-    #   fi
-      
-    #   if [[ -n "$confirm_path" ]]; then # Only prompt if a relevant path can be determined
-    #     local canon_confirm_path=$(_canonical_path_of "$confirm_path")
-    #     # Execute first conditional test, then chain with logical AND (&&)
-    #     if [[ -z "$DANGER_MODE" ]] && ! _is_home_dir "$canon_confirm_path"; then
-    #       warn "WARNING: You are attempting a destructive operation ('${cmd}') outside of your HOME directory:"
-    #       warn "  Target: ${canon_confirm_path}"
-    #       info "Are you sure you want to proceed? (y/N)"
-    #       read -r -p "Confirm: " response
-    #       if ! [[ "$response" =~ ^[Yy]$ ]]; then
-    #         error "Operation cancelled by user."
-    #         return 1 # Return failure to dispatch, which will propagate
-    #       fi
-    #     fi
-    #   fi
-    # fi
-    
-    if _destructive_guard "$cmd" "$file_arg"; then
-
-    fi
-
-
-    # Execute command with arguments reordered for the new function signatures
-    case "$cmd" in
-      (line) knife_line "$arg1" "$arg2" ;;
-      (lines) 
-        if [[ "$arg1" == "quick" ]]; then  # @note : this probably does need two part command
-          knife_lines_quick "$arg2"; 
-        else 
-          error "Unknown 'lines' subcommand: $arg1"; return 1; 
-        fi
-      ;;
-      (banner) knife_banner "$arg1" "$arg2" ;;
-      (block) knife_block "$arg1" "$arg2" ;;
-      (blockr) knife_block_range "$arg1" "$arg2" "$arg3" ;;
-      (logo) knife_block_range "$arg1" "$arg2" "$arg3"  ;; #alias
-
-      (linked) knife_linked "$arg1" "$arg2" ;;
-      (link) knife_link "$arg1" "$arg2" ;;
-      (unlink) knife_unlink "$arg1" "$arg2" ;;
-
-      (getv) knife_getv "$arg1" "$arg2" ;; # getv KEY FILE
-      (keys) knife_keys;; # 1arg# keys FILE
-      (val) knife_val "$arg1" "$arg2" ;; # val VALUE_PATTERN FILE
-      (setv|defv) knife_setv "$arg1" "$arg2" "$arg3" ;; # setv KEY VALUE FILE
-      (split) knife_split "$arg1" "$arg2" ;;
-      (inject) knife_inject "$arg1" "$arg2" ;;
-      (delete) knife_delete_line "$arg1" "$arg2" ;;
-      (extract) knife_extract "$arg1" "$arg2" ;;
-      (meta) knife_meta "$arg1" ;;
-      (metaget) knife_metaget "$arg1" "$arg2" ;;
-      (metaset) knife_metaset "$arg1" "$arg2" "$arg3" ;;
-      (metadel) knife_metadel "$arg1" "$arg2" ;;
-
-      (copy) knife_copy_lines "$arg1" "$arg2" "$arg3" ;; # copy SOURCE_FILE NUM_LINES OUTPUT_FILE
-      (has) knife_has "$arg1" "$arg2" ;;
-      (show) knife_show "$arg1" "$arg2" ;;
-      (history) knife_history "$@" ;; # Pass all remaining args directly for history
-      (search) knife_search_here "$arg1" ;;
-      (cleanup) knife_cleanup ;;
-      (*) error "Unknown command: $cmd"; return 1 ;;
-    esac
-  }
-
-
-
-  dispatch_(){
+  dispatch(){
     local call="$1" arg="$2"  cmd=''file_arg='' ret;
 
     file_arg=$(_target_file "$@");

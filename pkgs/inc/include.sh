@@ -19,6 +19,8 @@
 
 #-------------------------------------------------------------------------------
 
+  echo "loaded include.sh" >&2;
+
 #-------------------------------------------------------------------------------
 # Basic Stderr Helpers overridden later by stderr.sh
 #-------------------------------------------------------------------------------
@@ -129,7 +131,7 @@
   }
 
 # =================== startup flag =================================
-[ -n "$DEBUG_MODE" ] && echo "[INC] include.sh added $(func_stats) functions" >&2;
+# [ -n "$DEBUG_MODE" ] && echo "[INC] include.sh added $(func_stats) functions" >&2;
 
 
   # try to load stderr from user installed path

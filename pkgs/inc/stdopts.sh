@@ -11,6 +11,7 @@
 # 
 #-------------------------------------------------------------------------------
 
+  echo "loaded stdopts.sh" >&2;
 
 #-------------------------------------------------------------------------------
 # Utils
@@ -70,7 +71,8 @@
     if [ "$opt_quiet" -eq 0 ]; then
       opt_debug=1; opt_trace=1; opt_silly=1;
     else
-      warn "Quiet is $opt_quiet";
+      noop;
+      #warn "Quiet is $opt_quiet";
     fi
 
     #set any options errors
