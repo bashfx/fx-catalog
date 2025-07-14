@@ -7,7 +7,10 @@
 #-------------------------------------------------------------------------------
 #=====================================code!=====================================
 
-  echo "loaded stdopts.sh" >&2;
+#-------------------------------------------------------------------------------
+# 
+#-------------------------------------------------------------------------------
+
 
 #-------------------------------------------------------------------------------
 # Utils
@@ -28,7 +31,11 @@
 
 # @lbl options
 
-  options(){
+  global_options(){
+
+  }
+
+  local_options(){
     # Using local ensures these variables don't leak into the global scope.
     local err
 
@@ -55,6 +62,8 @@
       esac
     done
 
+
+
     # Apply hierarchical verbosity rules.
     # Higher levels of verbosity enable lower levels.
     [ "$opt_silly" -eq 0 ] && { opt_trace=0; opt_debug=0; }
@@ -72,3 +81,11 @@
 
   }
 
+
+  options(){
+    global_options;
+    local_options;
+  }
+
+# =================== startup flag =================================
+#[ -n "$DEBUG_MODE" ] && echo "[INC] stdopts.sh added $(func_stats) functions" >&2;

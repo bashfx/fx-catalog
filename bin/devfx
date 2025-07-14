@@ -64,7 +64,7 @@
     return 0;
   }
 
-  this_context_fx
+  this_context_fx;
   
 
 #-------------------------------------------------------------------------------
@@ -331,7 +331,7 @@ EOF
   }
 
   fx_link_cmd(){
-    local  call="$1" rc=${FX_RC:-=$(fx_get_rc_file)} ret=1;
+    local call="$1" rc=${FX_RC:-=$(fx_get_rc_file)} ret=1;
     case $call in
       (has) cmd='has_profile_link' ;;
       (add) cmd='set_profile_link' ;;

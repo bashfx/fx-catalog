@@ -32,3 +32,9 @@
   function_exists(){
     [ -n "$1" ] && declare -F "$1" >/dev/null
   }
+
+
+
+
+# =================== startup flag =================================
+[ -n "$DEBUG_MODE" ] && echo "[INC] stdutils.sh added $(func_stats) functions" >&2;

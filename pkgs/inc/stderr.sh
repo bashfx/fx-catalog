@@ -14,9 +14,12 @@
   LOCAL_LIB_DIR="$(dirname ${BASH_SOURCE[0]})";
   source "${LOCAL_LIB_DIR}/stdopts.sh";
   source "${LOCAL_LIB_DIR}/escape.sh";
+  source "${LOCAL_LIB_DIR}/stdutils.sh";
 
-
-
+  # QUITE_MODE guards set in stdopts.options()
+  # DEV_MODE guards set in stdopts.options()
+  # TEST_MODE guards set directly in __log dispatcher
+  
 #-------------------------------------------------------------------------------
 # Printers
 #-------------------------------------------------------------------------------
@@ -40,6 +43,7 @@
   __log() {
     local type=$1 text=$2 force=$3 stream=2;
     case "$type" in
+      qa)    [[ -n "$TEST_MODE" ]]                  && __printx "$text\n" "grey"   "$darr "   $stream ;;
       dev)   [[ $opt_dev -eq 0 ]]                   && __printx "$text\n" "red2"   "$boto "   $stream ;;
       warn)  [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "orange" "$delta "  $stream ;;
       okay)  [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "green"  "$pass "   $stream ;;
@@ -63,6 +67,8 @@
   think() { __log think "$1"; }
   error() { __log error "$1"; }
   log_dev()   { __log dev "$1"; }
+  log_test()  { __log qa "$1"; }
+  
 
 
   __printf(){
@@ -211,3 +217,4 @@
   trap handle_stop SIGTSTP
   trap handle_input CONT
   trap fin EXIT
+

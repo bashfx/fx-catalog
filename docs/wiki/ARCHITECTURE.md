@@ -33,6 +33,17 @@ These are the conventions and patterns that define how BashFX scripts are constr
 This section covers the low-level "grammar" of a BashFX script: how things are named, how scope is implied, and the expected skeleton of a "Proper Script."
 
 - **1. Respect for "Known" Globals:** A concerted effort is made to respect community-accepted global variables (DEBUG, NO_COLOR, etc.). This is a goal we work towards for better cross-system standardization.
+
+	BashFX further defines these standardized global flags. Use them *cautiously* as they can be a hammer to everything that looks like a nail:
+
+	Modes (state toggles):
+
+	`DEV_MODE`   - enables `dev_log` messages and `require_dev` guards, guards block `dev_` prefixed functions (manually)
+	`QUIET_MODE` - disables any and all stderr log messages, useful in testing and piping; use sparingly otherwise lack of screen messages may be confusing.
+	`DEBUG_MODE` - toggles execution path switching for troubleshooting and diagnostics.
+	`TEST_MODE`  - enables `test_log` messages and `require_test` guards, guards block `test_` prefixed functions (manually).
+
+
     
 - **2. Variable Case by Scope:** The casing of a variable implies its scope.
     

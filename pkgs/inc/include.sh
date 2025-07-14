@@ -19,22 +19,40 @@
 
 #-------------------------------------------------------------------------------
 
-  echo "loaded include.sh";
-  BASH_MAJOR=${BASH_VERSINFO[0]};
-  
-  # try to load stderr from user installed path
-  if [ -d "$FX_INC_DIR" ]; then
-    source "$FX_INC_DIR/stderr.sh";
-  else
-    # fallback on the neighborly version
-    LOCAL_LIB_DIR="$(dirname ${BASH_SOURCE[0]})";
-    source "${LOCAL_LIB_DIR}/stderr.sh";
-  fi
+#-------------------------------------------------------------------------------
+# Basic Stderr Helpers overridden later by stderr.sh
+#-------------------------------------------------------------------------------
 
-  if ! declare -F stderr > /dev/null; then
-    echo "[INC] Error loading stderr.sh dependency";
-    exit 1;
-  fi
+
+  BASH_MAJOR=${BASH_VERSINFO[0]};
+
+
+  red=$'\x1B[31m';
+  orange=$'\x1B[38;5;214m';
+  green=$'\x1B[32m';
+  blue=$'\x1B[36m';
+  xx=$'\x1B[0m';     # Alias for reset
+
+  # note: these mini stderr functions dont respect quiet or verbose flags
+  # you will need global level QUIET_MODE to shut these ones up
+  stderr(){ [ -z "$QUIET_MODE" ] &&  printf "%b\n" "$@" 1>&2; }
+  error(){ stderr "${red}" "$1" "${xx}"; }
+  warn(){ stderr "${orange}" "$1" "${xx}"; }
+  okay(){ stderr "${green}" "$1" "${xx}"; }
+  info(){ stderr "${blue}" "$1" "${xx}"; }
+
+
+#-------------------------------------------------------------------------------
+# Experiments
+#-------------------------------------------------------------------------------
+
+
+  func_stats(){
+    local this_file="${BASH_SOURCE[0]}"
+    grep -E '^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(\)[[:space:]]*\{' "$this_file" \
+      | grep -vE '^[[:space:]]*(#|source|\.)' \
+      | wc -l
+  }
 
 
   # returns any available include directory - prioritizes user over init
@@ -109,3 +127,21 @@
 
     return 1;
   }
+
+# =================== startup flag =================================
+[ -n "$DEBUG_MODE" ] && echo "[INC] include.sh added $(func_stats) functions" >&2;
+
+
+  # try to load stderr from user installed path
+  if [ -d "$FX_INC_DIR" ]; then
+    source "$FX_INC_DIR/stderr.sh";
+  else
+    # fallback on the neighborly version
+    LOCAL_LIB_DIR="$(dirname ${BASH_SOURCE[0]})";
+    source "${LOCAL_LIB_DIR}/stderr.sh";
+  fi
+
+  if ! declare -F stderr > /dev/null; then
+    echo "[INC] Error loading stderr.sh dependency";
+    exit 1;
+  fi

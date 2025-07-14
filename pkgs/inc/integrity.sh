@@ -6,12 +6,10 @@
 #===============================================================================
 
 
-  echo "loaded integrity.sh" >&2;
-
-
 # --- Integrity API ---
 
 fx_integrity_verify_all() {
+  
   think "fx_integrity_verify_all"
   local file="${FX_ETC}/manifest.log"
   local integrity_ok=0 # 0=success, 1=failure
