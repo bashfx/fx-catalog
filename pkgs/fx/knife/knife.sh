@@ -37,6 +37,9 @@ REALPATH_CMD=""
 MD5_CMD="" # Will be md5sum or md5
 COLUMN_CMD=""
 DATE_CMD="" # Will be date (GNU or BSD)
+FIND_CMD="" # Path to the find utility
+SED_CMD="" # Path to sed utility
+SED_INPLACE_OPT="" # Option for sed -i based on GNU/BSD
 
 # Logs messages to stderr
 stderr() { printf "%s\n" "$@" >&2; }
@@ -100,6 +103,30 @@ __check_all_dependencies() {
     missing_critical=1
   fi
 
+  # Check for find (for search_here)
+  __check_utility "find" "FIND_CMD"
+  if [[ -z "$FIND_CMD" ]]; then
+    error "Missing critical utility: find (for search command). Please install."
+    missing_critical=1
+  fi
+
+  # Check for sed (for file manipulation) and determine in-place option
+  __check_utility "sed" "SED_CMD"
+  if [[ -z "$SED_CMD" ]]; then
+    error "Missing critical utility: sed (for file manipulation). Please install."
+    missing_critical=1
+  else
+    # Determine the correct sed in-place option (GNU vs. BSD)
+    if "$SED_CMD" --version >/dev/null 2>&1; then # GNU sed
+      SED_INPLACE_OPT="-i"
+    elif "$SED_CMD" -i '' /dev/null 2>/dev/null; then # BSD sed, test with empty backup suffix
+      SED_INPLACE_OPT="-i ''"
+    else
+      error "Cannot determine sed -i functionality. In-place edits may fail."
+      missing_critical=1
+    fi
+  fi
+
   # Check for column (non-critical, for history formatting)
   __check_utility "column" "COLUMN_CMD"
   if [[ -z "$COLUMN_CMD" ]]; then
@@ -115,12 +142,24 @@ __check_all_dependencies() {
 # Helper to check if a file exists and report error if not
 __check_file_exists_or_fail() {
   local file="$1"
-  if [[ -f "$file" ]]; then
-    knife_success
-  else
-    error "File not found: $file"
-    knife_fail
+  local err_msg=""
+  if [[ -z "$file" ]]; then
+    err_msg="Missing required filename argument."
+  elif [[ ! -f "$file" ]]; then
+    err_msg="File not found: '$file'"
   fi
+
+  if [[ -n "$err_msg" ]]; then
+    error "$err_msg"
+    knife_fail
+  else
+    knife_success
+  fi
+}
+
+# Escapes special characters for use in sed literal string patterns
+_escape_sed_pattern_literal() {
+  printf "%s" "$1" | "$SED_CMD" 's/[][\/.^$*?+(){}|!]/\\&/g' # Escape common sed delimiters and regex metachars for literal match
 }
 
 # Checks if a file exists and is a shell script or .rc file
@@ -128,7 +167,7 @@ _is_shell_or_rc() {
   local file="$1"
   __check_file_exists_or_fail "$file" || return 1
   # Check for shebang OR common RC file extensions/names
-  grep -qE '^#!.*sh' "$file" || [[ "$(basename "$file")" =~ (\.rc|\.profile|\.bashrc|\.zshrc)$ ]] || [[ "$(basename "$file")" =~ ^\.rc[a-zA-Z0-9_]*$ ]]
+  grep -qE '^#!.*sh' "$file" || [[ "$(basename "$file")" =~ (\.sh|\.rc|\.profile|\.bashrc|\.zshrc|\.kshrc|\.cshrc|\.tcshrc|\.login)$ ]] || [[ "$(basename "$file")" =~ ^\.rc[a-zA-Z0-9_]*$ ]]
 }
 
 # Creates a backup of a file
@@ -153,6 +192,7 @@ _canonical_path_of() {
     # Fallback if REALPATH_CMD is not set (should not happen after __check_all_dependencies)
     echo "$file"
   fi
+  # Removed redundant knife_success
 }
 
 # Returns MD5 hash of file content
@@ -166,13 +206,13 @@ _file_md5() {
         "$MD5_CMD" -q "$file"
       fi
     else
-      # Should be caught by __check_all_dependencies, but just in case
       error "Hashing utility (md5sum/md5) not available."
       echo "" # Return empty string on failure
     fi
   else
     echo "" # Return empty string if file doesn't exist
   fi
+  # Removed redundant knife_success
 }
 
 # Returns MD5 hash of a string
@@ -185,10 +225,10 @@ _string_md5() {
       echo -n "$str" | "$MD5_CMD" -q
     fi
   else
-    # Should be caught by __check_all_dependencies
     error "Hashing utility (md5sum/md5) not available."
     echo "" # Return empty string on failure
   fi
+  # Removed redundant knife_success
 }
 
 # Formats a Unix timestamp into a human-readable date string
@@ -251,9 +291,9 @@ _add_known_file() {
     knife_success
   else
     # Remove old entry if path exists but content has changed (or different hash)
-    sed -i "/^${canon_path}:/d" "$KNOWN_FILES_FILE" 2>/dev/null || true # `|| true` to suppress error if file doesn't exist
+    "$SED_CMD" "$SED_INPLACE_OPT" "/^${canon_path}:/d" "$KNOWN_FILES_FILE" 2>/dev/null || true # `|| true` to suppress error if file doesn't exist
     echo "${canon_path}:${path_hash}:${content_hash}:${filename}" >> "$KNOWN_FILES_FILE"
-    knife_success
+    knife_success # Explicit success needed as echo might not guarantee
   fi
 }
 
@@ -294,18 +334,17 @@ __log_history() {
   fi
 
   echo "${id}:${timestamp}:${cmd_type}:${cmd_params}:${vanity_filename}:${path_hash}:${content_hash}" >> "$HISTORY_FILE"
-  knife_success
+  # Removed redundant knife_success
 }
 
 # --- Main Knife Commands ---
-
 
 # knife line <line_num> <file>
 knife_line() {
   local line_num="$1" file="$2"
   __check_file_exists_or_fail "$file" || return 1
-  sed -n "${line_num}p" "$file"
-  knife_success
+  "$SED_CMD" -n "${line_num}p" "$file"
+  # Removed redundant knife_success
 }
 
 # knife lines quick <file>
@@ -313,15 +352,21 @@ knife_lines_quick() {
   local file="$1"
   __check_file_exists_or_fail "$file" || return 1
   wc -l < "$file"
-  knife_success
+  # Removed redundant knife_success
 }
 
 # knife banner <label> <file>
 knife_banner() {
   local label="$1" file="$2"
   __check_file_exists_or_fail "$file" || return 1
-  grep -nE "^###\\s*$label\\s*###" "$file" | cut -d: -f1 || { info "Banner '${label}' not found in $file"; echo -1; }
-  knife_success
+  # Removed ^ anchor to allow banners not at start of line (e.g., after a source)
+  local line_num=$(grep -nE "#+\\s*$label\\s*#+" "$file" | cut -d: -f1)
+  if [[ -n "$line_num" ]]; then
+      echo "$line_num"
+  else
+      info "Banner '${label}' not found in $file"
+      knife_fail # Signal failure with return code, not -1
+  fi
 }
 
 # knife block <label> <file>
@@ -329,7 +374,7 @@ knife_block() {
   local label="$1" file="$2"
   __check_file_exists_or_fail "$file" || return 1
   awk "/### open:$label/{flag=1; next} /### close:$label/{flag=0} flag" "$file"
-  knife_success
+  # Removed redundant knife_success
 }
 
 # knife linked <fileA> <fileB>
@@ -366,20 +411,34 @@ knife_link() {
 # knife unlink <fileA> <fileB> (removes source statement)
 knife_unlink() {
   local fileA="$1" fileB="$2"
-  __check_file_exists_or_fail "$fileA" || return 1
+  # Do not check fileA existence, as it might be deleted (unlink by label/line content)
   __check_file_exists_or_fail "$fileB" || return 1
   if ! _is_shell_or_rc "$fileB"; then
     error "Cannot unlink: $fileB is not a shell or .rc file."
     return 1 # Early exit on error
   fi
-  if ! knife_linked "$fileA" "$fileB"; then # Use the new knife_linked
+  # Use knife_linked check for the presence of the link
+  if ! knife_linked "$fileA" "$fileB"; then
     warn "Not linked: ${fileA} not found in ${fileB}"
     knife_success
   else
     _backup_file "$fileB" || return 1
-    # Use '|' as sed delimiter to safely match source statements with canonical or basename path
-    local search_pattern="source +\"?($(_canonical_path_of "$fileA")|$(basename "$fileA"))\"?"
-    sed -i "\|^${search_pattern}|d" "$fileB"
+    
+    # Generate exact literal strings to delete
+    local canonical_line="source \"$(_canonical_path_of "$fileA")\" # knife:link"
+    local basename_line="source \"$(basename "$fileA")\" # knife:link" # Also consider if only basename was sourced
+    
+    # Escape these literal strings for sed's /pattern/ syntax
+    local escaped_canonical_line=$(_escape_sed_pattern_literal "$canonical_line")
+    local escaped_basename_line=$(_escape_sed_pattern_literal "$basename_line")
+
+    # Attempt to delete the canonical path version
+    "$SED_CMD" "$SED_INPLACE_OPT" "/${escaped_canonical_line}/d" "$fileB" 2>/dev/null
+    # Attempt to delete the basename version (if different and not already deleted)
+    if [[ "$canonical_line" != "$basename_line" ]]; then
+        "$SED_CMD" "$SED_INPLACE_OPT" "/${escaped_basename_line}/d" "$fileB" 2>/dev/null
+    fi
+    
     __log_history "unlink" "$(basename "$fileA")" "$fileB"
     okay "Unlinked ${fileA} from ${fileB}"
     knife_success
@@ -390,16 +449,18 @@ knife_unlink() {
 knife_getv() {
   local key="$1" file="$2"
   __check_file_exists_or_fail "$file" || return 1
-  grep -E "^\s*${key}\s*=" "$file" | tail -n1 | cut -d= -f2-
-  knife_success
+  # Extract value after '=', strip trailing semicolons/comments and leading/trailing whitespace
+  grep -E "^\s*${key}\s*=" "$file" | tail -n1 | cut -d= -f2- | "$SED_CMD" -E 's/;\s*$//;s/\s*#.*$//;s/^\s*//;s/\s*$//'
+  # Removed redundant knife_success
 }
 
 # knife keys <file>
 knife_keys() {
   local file="$1"
   __check_file_exists_or_fail "$file" || return 1
-  grep -E '^\s*[A-Za-z_][A-Za-z0-9_]*\s*=.*' "$file"
-  knife_success
+  # Extract key-value pairs, then strip trailing semicolons/comments from the output
+  grep -E '^\s*[A-Za-z_][A-Za-z0-9_]*\s*=.*' "$file" | "$SED_CMD" -E 's/;\s*$//;s/\s*#.*$//'
+  # Removed redundant knife_success
 }
 
 # knife val <value_pattern> <file>
@@ -407,8 +468,9 @@ knife_val() {
   local value_pattern="$1" file="$2"
   __check_file_exists_or_fail "$file" || return 1
   # Search for lines where VALUE part contains the pattern (after first '=')
-  grep -E '^[A-Za-z_][A-Za-z0-9_]*\s*=[^=]*'"${value_pattern}"'.*' "$file"
-  knife_success
+  # Then cut the line to only return the KEY name
+  grep -E '^[A-Za-z_][A-Za-z0-9_]*\s*=[^=]*'"${value_pattern}"'.*' "$file" | cut -d= -f1 | "$SED_CMD" -E 's/^\s*//;s/\s*$//'
+  # Removed redundant knife_success
 }
 
 # knife setv <key> <value> <file> (aliased by defv)
@@ -417,7 +479,7 @@ knife_setv() {
   __check_file_exists_or_fail "$file" || return 1
   _backup_file "$file" || return 1
   if grep -qE "^\s*${key}\s*=" "$file"; then
-    sed -i "s|^\s*${key}\s*=.*|${key}=${value}|" "$file"
+    "$SED_CMD" "$SED_INPLACE_OPT" "s|^\s*${key}\s*=.*|${key}=${value}|" "$file"
     okay "Updated key '${key}' in ${file}"
   else
     echo "${key}=${value}" >> "$file"
@@ -440,17 +502,25 @@ knife_split() {
 
 # knife inject <src_file> <target_file>
 knife_inject() {
-  local src="$1" target="$2" name="$(basename "$src")"
+  local src="$1" target="$2"
+  local name=$(basename "$src") # Calculate name once
+
   __check_file_exists_or_fail "$src" || return 1
   __check_file_exists_or_fail "$target" || return 1
+
+  if [[ -z "$name" ]]; then # Defensive check
+    error "Cannot determine filename for injection marker from source: $src"
+    return 1 # Early exit
+  fi
+
   # Use grep -F for fixed string match of the marker
-  if ! grep -Fq "### include:$name ###" "$target"; then
+  if ! grep -Fq "### include:${name} ###" "$target"; then
     error "Injection marker '### include:${name} ###' not found in ${target}."
-    knife_fail
+    return 1 # Ensure early exit if marker not found
   fi
   _backup_file "$target" || return 1
   # Use '|' as sed delimiter to avoid issues with '/' in path
-  sed -i "\|### include:${name} ###|r ${src}" "$target"
+  "$SED_CMD" "$SED_INPLACE_OPT" "\|### include:${name} ###|r ${src}" "$target"
   __log_history "inject" "$name" "$target"
   okay "Injected ${src} into ${target}"
   knife_success
@@ -462,7 +532,7 @@ knife_delete_line() {
   __check_file_exists_or_fail "$file" || return 1
   _backup_file "$file" || return 1
   # Replace content of line_num with a comment to preserve line count and mark deletion
-  sed -i "${line_num}s/.*/#knife deleted line $(_format_timestamp "$(date +%s)")/" "$file"
+  "$SED_CMD" "$SED_INPLACE_OPT" "${line_num}s/.*/#knife deleted line $(__format_timestamp "$(date +%s)")/" "$file"
   __log_history "delete" "$line_num" "$file"
   okay "Line ${line_num} in ${file} replaced with '#knife deleted line'."
   knife_success
@@ -478,16 +548,16 @@ knife_meta() {
   local file="$1"
   __check_file_exists_or_fail "$file" || return 1
   grep -E '^#\s*[A-Za-z_]+\s*:' "$file"
-  knife_success
+  # Removed redundant knife_success
 }
 
 # knife metaget <key> <file>
 knife_metaget() {
   local key="$1" file="$2"
   __check_file_exists_or_fail "$file" || return 1
-  # Match key, extract content after first colon, remove leading/trailing whitespace
-  grep -E "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f2- | sed -E 's/^\s*//;s/\s*$//'
-  knife_success
+  # Match key, extract content after first colon, remove leading/trailing whitespace and trailing semicolons
+  grep -E "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f2- | "$SED_CMD" -E 's/;\s*$//;s/^\s*//;s/\s*$//'
+  # Removed redundant knife_success
 }
 
 # knife metaset <key> <value> <file>
@@ -497,15 +567,15 @@ knife_metaset() {
   _backup_file "$file" || return 1
   local marker_line_num=$(grep -nE "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f1)
   if [[ -n "$marker_line_num" ]]; then
-    sed -i "${marker_line_num}s|^#\\s*${key}\\s*:.*|# ${key}: ${value}|" "$file"
+    "$SED_CMD" "$SED_INPLACE_OPT" "${marker_line_num}s|^#\\s*${key}\\s*:.*|# ${key}: ${value}|" "$file"
     okay "Updated meta key '${key}' in ${file}"
   else
-    # Find the last # comment line to append meta to
+    # Find the last # comment line in the file
     local last_comment_line=$(grep -nE '^\s*#' "$file" | tail -n1 | cut -d: -f1)
     if [[ -n "$last_comment_line" ]]; then
-      sed -i "${last_comment_line}a\\# ${key}: ${value}" "$file" # Append after last comment
+      "$SED_CMD" "$SED_INPLACE_OPT" "${last_comment_line}a\\# ${key}: ${value}" "$file" # Append after last comment
     else
-      echo "# ${key}: ${value}" >> "$file" # Append to end if no comments
+      echo "# ${key}: ${value}" >> "$file" # Append to end if no comments at all
     fi
     okay "Added meta key '${key}' to ${file}"
   fi
@@ -520,7 +590,7 @@ knife_metadel() {
   local marker_line_num=$(grep -nE "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f1)
   if [[ -n "$marker_line_num" ]]; then
     _backup_file "$file" || return 1
-    sed -i "${marker_line_num}d" "$file"
+    "$SED_CMD" "$SED_INPLACE_OPT" "${marker_line_num}d" "$file"
     __log_history "metadel" "${key}" "$file"
     okay "Deleted meta key '${key}' from ${file}"
   else
@@ -535,7 +605,7 @@ knife_logo() {
   local file="$1"
   __check_file_exists_or_fail "$file" || return 1
 
-  # Look for a logo marker. Example: ### KNIFE_LOGO_START ###
+  # Look for logo markers
   local start_marker="### KNIFE_LOGO_START ###"
   local end_marker="### KNIFE_LOGO_END ###"
 
@@ -544,9 +614,9 @@ knife_logo() {
   local end_line=$(grep -Fn "$end_marker" "$file" | cut -d: -f1 | head -n1)
 
   if [[ -n "$start_line" && -n "$end_line" && "$start_line" -lt "$end_line" ]]; then
-    # Print lines between markers (exclusive of markers themselves)
-    awk -v start="$start_line" -v end="$end_line" 'NR > start && NR < end {print}' "$file"
-    knife_success
+    # Print lines between markers (exclusive of markers themselves) and strip leading #
+    awk -v start="$start_line" -v end="$end_line" 'NR > start && NR < end { sub(/^#+ ?/, ""); print }' "$file"
+    # Removed redundant knife_success
   else
     info "No logo block found (or markers malformed) in ${file}. Expected '${start_marker}' to '${end_marker}'."
     knife_fail
@@ -562,14 +632,38 @@ knife_copy_lines() {
   knife_success
 }
 
+# knife has <pattern> <file>
+knife_has() {
+  local pattern="$1" file="$2"
+  __check_file_exists_or_fail "$file" || return 1
+  if grep -qE "$pattern" "$file"; then
+    info "Pattern '${pattern}' found in ${file}."
+    knife_success
+  else
+    # Changed to error() as per feedback
+    error "Pattern '${pattern}' not found in ${file}."
+    knife_fail
+  fi
+}
+
+# knife show <pattern> <file>
+knife_show() {
+  local pattern="$1" file="$2"
+  __check_file_exists_or_fail "$file" || return 1
+  if ! grep -nE "$pattern" "$file"; then
+    info "No matches found for '${pattern}' in ${file}."
+  fi
+  # Removed redundant knife_success
+}
+
 # knife history [ :fields... | :all ] [file_query...]
 knife_history() {
   local requested_fields=""
   local file_query_arg=""
   local field_map="id:0 time:1 cmd:2 params:3 vanity:4 path_hash:5 content_hash:6"
   local -A headers=(
-    [id]="ID" [time]="Time" [cmd]="Command" [params]="Parameters"
-    [vanity]="File" [path_hash]="PathHash" [content_hash]="ContentHash"
+    [id]="ID" [time]="Time"$'\t'$'\t' [cmd]="Command" [params]="Parameters"
+    [vanity]="File"$'\t' [path_hash]="PathHash" [content_hash]="ContentHash"
   )
 
   # Parse arguments: colon-prefixed fields followed by file_query
@@ -607,7 +701,7 @@ knife_history() {
   # Map field names to indices and build display headers
   local name index
   for name in "${field_names[@]}"; do
-    index=$(echo "$field_map" | sed -E "s/.*${name}:([0-9]).*/\1/")
+    index=$(echo "$field_map" | "$SED_CMD" -E "s/.*${name}:([0-9]).*/\1/")
     if [[ -n "$index" ]]; then
       field_indices+=("$index")
       display_headers+=("${headers[$name]}")
@@ -658,8 +752,8 @@ knife_history() {
         # Append with actual tab character
         current_output="${current_output}${field_val}"$'\t'
       done
-      # Remove trailing tab, then add newline
-      output_data="${output_data}${current_output%?}\n" # %? removes the last character (the tab)
+      # Add newline. `column` needs the tabs, so no trailing tab removal.
+      output_data="${output_data}${current_output}"$'\n' 
     fi
   done <<< "$history_lines"
 
@@ -668,11 +762,11 @@ knife_history() {
     knife_fail
   else
     # Print headers
-    printf "%s\t" "${display_headers[@]}" | sed 's/\t$//' # Trim last tab
+    printf "%s\t" "${display_headers[@]}" | "$SED_CMD" 's/\t$//' # Trim last tab
     echo ""
     # Print data using column for formatting, if available
     if [[ -n "$COLUMN_CMD" ]]; then
-      printf "%s" "$output_data" | "$COLUMN_CMD" -ts $'\t'
+      printf "%s" "$output_data" | "$COLUMN_CMD" -s $'\t' -t # Use -s for tab, -t for table
     else
       printf "%s" "$output_data" # Raw tab-separated if column is missing
     fi
@@ -695,13 +789,13 @@ knife_search_here() {
   local exclude_paths=()
 
   # Build exclude paths for find -not -path
-  local exclude_item
-  for exclude_item in "${KNIFE_EXCLUDES[@]}"; do
-    exclude_paths+=("-o" "-path" "*/${exclude_item}/*")
-  done
-  # Remove the leading -o if there were exclusions, then group with NOT
-  if [[ "${exclude_paths[0]}" == "-o" ]]; then
-    unset 'exclude_paths[0]'
+  if [[ ${#KNIFE_EXCLUDES[@]} -gt 0 ]]; then
+    local exclude_item
+    for exclude_item in "${KNIFE_EXCLUDES[@]}"; do
+      exclude_paths+=("-o" "-path" "*/${exclude_item}/*")
+    done
+    # Remove the leading -o and group with NOT
+    unset 'exclude_paths[0]' # This is safe now because of the `if [[ ${#KNIFE_EXCLUDES[@]} -gt 0 ]]` check
     exclude_paths=("!" "(" "${exclude_paths[@]}" ")")
   fi
 
@@ -721,15 +815,13 @@ knife_search_here() {
   find_cmd_args+=("${find_args[@]}")
   find_cmd_args+=("${exclude_paths[@]}")
   
-  # Crucially, use -exec sh -c 'grep -l -E "$0" "$@"' to safely pass pattern
-  # The first "$0" in sh -c's argument list becomes the value of "$0" in the executed script (the pattern)
-  # The "sh" after the pattern is a dummy argument for "$0" inside the sh -c, as "$@" starts from $1
-  find_cmd_args+=("-exec" "sh" "-c" 'grep -l -E "$0" "$@"' "$pattern" "sh" "{} +" )
+  # Corrected -exec for grep
+  find_cmd_args+=("-exec" "grep" "-lE" "$pattern" "{}" "+")
 
   # Execute the find command directly using the command path
   local found_files
   # Capture stderr to suppress `grep: command not found` etc. if sh -c has issues
-  found_files=$("$REALPATH_CMD" "${find_cmd_args[@]}" 2>/dev/null) # REALPATH_CMD stores the path to find
+  found_files=$("$FIND_CMD" "${find_cmd_args[@]}" 2>/dev/null) # NOW USING FIND_CMD
 
   if [[ -z "$found_files" ]]; then
     info "No files found containing '${pattern}'."
@@ -744,7 +836,7 @@ knife_search_here() {
 # knife cleanup
 knife_cleanup() {
   local num_removed=0
-  local success=0
+  local overall_success=0 # Tracks if at least one item was removed or if no issues occurred
 
   if [[ -z "$DANGER_MODE" ]]; then
     info "This will remove all Knife-related backups (.bak), split parts (.part1, .part2), and Knife's history/known files."
@@ -757,10 +849,12 @@ knife_cleanup() {
   fi
 
   # 1. Remove backup files based on known files list
+  info "Attempting to remove backup files (.bak)..."
   if [[ -f "$KNOWN_FILES_FILE" ]]; then
-    info "Removing backup files (.bak)..."
     local canon_path filename
-    while IFS=':' read -r _ _ _ canon_path filename; do
+    # Loop through unique canonical paths in known files to find potential backups
+    # Use awk to get unique canonical paths (field 1) if there are duplicates due to hash changes
+    awk -F: '{print $1}' "$KNOWN_FILES_FILE" | sort -u | while read -r canon_path; do
       local backup_file="${canon_path}${BACKUP_SUFFIX}"
       if [[ -f "$backup_file" ]]; then
         rm "$backup_file"
@@ -771,40 +865,44 @@ knife_cleanup() {
           warn "Failed to remove backup: ${backup_file}"
         fi
       fi
-    done < "$KNOWN_FILES_FILE"
-    success=1
+    done
+    overall_success=1 # At least attempted to remove backups
   else
     info "No known files to check for backups."
   fi
 
-  # 2. Remove split part files (*.part1, *.part2)
-  info "Removing split part files (*.part1, *.part2)..."
-  local part_file_count=$(find "$HOME" -maxdepth 5 -type f \( -name "*.part1" -o -name "*.part2" \) -print0 2>/dev/null | xargs -0 rm -f 2>/dev/null | wc -l)
-  if [[ "$part_file_count" -gt 0 ]]; then
-      okay "Removed ${part_file_count} split part files."
-      num_removed=$((num_removed + part_file_count))
-      success=1
+  # 2. Remove split part files (*.part1, *.part2) - search only in current dir and HOME subdirs
+  info "Attempting to remove split part files (*.part1, *.part2)..."
+  local deleted_count=0
+  # Use find with -delete which is more efficient
+  # Adding -maxdepth 3 as originally intended for this specific find
+  local found_and_deleted_count=$("$FIND_CMD" "$(pwd)" "$HOME" -maxdepth 3 -type f \( -name "*.part1" -o -name "*.part2" \) -print -delete 2>/dev/null | wc -l)
+  
+  if [[ "$found_and_deleted_count" -gt 0 ]]; then
+      okay "Removed ${found_and_deleted_count} split files."
+      num_removed=$((num_removed + found_and_deleted_count))
+      overall_success=1
   else
-      info "No split part files found."
+    info "No split part files found."
   fi
   
   # 3. Remove Knife's internal state files
-  info "Removing Knife's internal state files..."
+  info "Attempting to remove Knife's internal state files..."
   if [[ -f "$KNOWN_FILES_FILE" ]]; then
     rm "$KNOWN_FILES_FILE"
-    if [[ $? -eq 0 ]]; then okay "Removed ${KNOWN_FILES_FILE}"; num_removed=$((num_removed + 1)); success=1; else warn "Failed to remove ${KNOWN_FILES_FILE}"; fi
+    if [[ $? -eq 0 ]]; then okay "Removed ${KNOWN_FILES_FILE}"; num_removed=$((num_removed + 1)); overall_success=1; else warn "Failed to remove ${KNOWN_FILES_FILE}"; fi
   else
     info "${KNOWN_FILES_FILE} not found."
   fi
 
   if [[ -f "$HISTORY_FILE" ]]; then
     rm "$HISTORY_FILE"
-    if [[ $? -eq 0 ]]; then okay "Removed ${HISTORY_FILE}"; num_removed=$((num_removed + 1)); success=1; else warn "Failed to remove ${HISTORY_FILE}"; fi
+    if [[ $? -eq 0 ]]; then okay "Removed ${HISTORY_FILE}"; num_removed=$((num_removed + 1)); overall_success=1; else warn "Failed to remove ${HISTORY_FILE}"; fi
   else
     info "${HISTORY_FILE} not found."
   fi
 
-  if [[ "$num_removed" -gt 0 ]]; then
+  if [[ "$overall_success" -eq 1 ]]; then
     okay "Cleanup complete. Total files removed: ${num_removed}."
     knife_success
   else
@@ -839,26 +937,30 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
       (linked|link|unlink|inject) target_file_for_prompt="$arg2" ;; # <src_file> <target_file>
       (copy) target_file_for_prompt="$arg3" ;; # <source_file> <num_lines> <output_file> -> target is source file
       (metaget|metaset|metadel) target_file_for_prompt="$arg2" ;; # <key> <file> for get/del, <key> <value> <file> for set
-      (cleanup) ;; # Cleanup has its own internal prompt
+      (cleanup) ;; # Cleanup has its own internal prompt, so no external target file
       (*) ;; # Other commands (history, search) don't have a direct target file for this prompt logic
     esac
 
     # Safety Guard for Destructive Operations
     # Check if command is destructive AND if a target file was identified (or if it's cleanup)
-    if _is_destructive_command "$cmd" && [[ -n "$target_file_for_prompt" || "$cmd" == "cleanup" ]]; then
+    if _is_destructive_command "$cmd"; then # Check if the command *type* is destructive
       local confirm_path="$target_file_for_prompt"
-      if [[ "$cmd" == "cleanup" ]]; then confirm_path="$HOME"; fi # Use HOME as reference for cleanup safety prompt
-
-      local canon_confirm_path=$(_canonical_path_of "$confirm_path")
-      # Execute first conditional test, then chain with logical AND (&&)
-      if [[ -z "$DANGER_MODE" ]] && ! _is_home_dir "$canon_confirm_path"; then
-        warn "WARNING: You are attempting a destructive operation ('${cmd}') outside of your HOME directory:"
-        warn "  Target: ${canon_confirm_path}"
-        info "Are you sure you want to proceed? (y/N)"
-        read -r -p "Confirm: " response
-        if ! [[ "$response" =~ ^[Yy]$ ]]; then
-          error "Operation cancelled by user."
-          return 1 # Return failure to dispatch, which will propagate
+      if [[ "$cmd" == "cleanup" ]]; then
+        confirm_path="$HOME" # Cleanup operates broadly, so use HOME as reference for prompt
+      fi
+      
+      if [[ -n "$confirm_path" ]]; then # Only prompt if a relevant path can be determined
+        local canon_confirm_path=$(_canonical_path_of "$confirm_path")
+        # Execute first conditional test, then chain with logical AND (&&)
+        if [[ -z "$DANGER_MODE" ]] && ! _is_home_dir "$canon_confirm_path"; then
+          warn "WARNING: You are attempting a destructive operation ('${cmd}') outside of your HOME directory:"
+          warn "  Target: ${canon_confirm_path}"
+          info "Are you sure you want to proceed? (y/N)"
+          read -r -p "Confirm: " response
+          if ! [[ "$response" =~ ^[Yy]$ ]]; then
+            error "Operation cancelled by user."
+            return 1 # Return failure to dispatch, which will propagate
+          fi
         fi
       fi
     fi
