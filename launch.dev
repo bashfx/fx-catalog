@@ -87,22 +87,34 @@ cat > "$src" << EOF
   export FXI_ROOT_DIR="$FXI_ROOT_DIR";
   export FXI_BIN_DIR="\$FXI_ROOT_DIR/bin";
   export FXI_PKG_DIR="\$FXI_ROOT_DIR/pkgs";
+  export FXI_APP_DIR="\$FXI_ROOT_DIR/pkgs/fx";
   export FXI_INC_DIR="\$FXI_ROOT_DIR/pkgs/inc";
 
-  if [[ ":\$PATH:" != *":\$FXI_BIN_DIR:"* ]]; then
-    export PATH="\$PATH:\$FXI_BIN_DIR"
-    printf "... added BashFX (fx) project bin to path\n";
+  if [[ ":\$PATH:" != *":\$FXI_BIN_DIR:\$FXI_INC_DIR:"* ]]; then
+    export PATH="\$PATH:\$FXI_BIN_DIR:\$FXI_INC_DIR"
+    printf "Launch added project bin and pkg to path...\n";
   fi
 
-  # helper aliases
+  if [[ ":\$PATH:" != *":\$FXI_APP_DIR/knife:"* ]]; then
+    export PATH="\$PATH:\$FXI_APP_DIR/knife"
+    printf "Launch added knife utility to path... \n";
+  fi
+
+  # fxproto aliases
   alias fxp="devfx";
   alias fxinstall="fxp install";
-  alias fxhelp="fxp help";
+  alias fxpi="fxinstall";
+  alias fxph="fxp help";
 
+  # launcher aliases
   alias fxlaunch="source $FXI_ROOT_DIR/launch.dev";
-  alias fxidel="fxlaunch reset";
-  alias fxirc="fxlaunch dumprcs";
-  alias fxihelp="fxlaunch help"
+  alias fxlrm="fxlaunch reset";
+  alias fxlrc="fxlaunch dumprcs";
+  alias fxnxt="fxlaunch check";
+  alias fxlh="fxlaunch help"
+
+  alias fxknife="knife.sh --portable";
+
 
 EOF
 
@@ -224,12 +236,13 @@ fxi_next(){
     printf "\nBashFX (fx) is ready for installation!\n";
     printf "Use [${_blue}fxinstall${_reset}] to complete. \n\n";
     printf "${_grey}Additional Command aliases: \n\n${_reset}";
-    printf "${_green}fxinext${_reset} : check the next step. \n";
-    printf "${_green}fxidel${_reset}  : remove/uninstall BashFX setup. \n";
-    printf "${_green}fxirc${_reset}   : dump setup rc file. \n";
-    printf "${_green}fxihelp${_reset} : see more commands. \n";
+    printf "${_green}fxlaunch next${_reset}  : check the next step. \n";
+    printf "${_green}fxlaunch reset${_reset} : remove/uninstall BashFX setup. \n";
+    printf "${_green}fxlaunch rc${_reset}    : dump setup rc file. \n";
+    printf "${_green}fxlaunch help${_reset}  : see more commands. \n";
 
-    printf "${_green}fxp${_reset}     : advanced/dev utils. \n";
+    printf "${_green}fxp${_reset}            : advanced/dev utils. \n";
+    printf "${_green}fxknife${_reset}        : portable knife. \n";
 
   elif [ -n "$FX_RC" ] && [ -f "$FX_RC" ]; then
     printf "${_green}BASHFX looks installed.${_reset}\n";
@@ -238,24 +251,33 @@ fxi_next(){
   fi
 }
 
+
 fxi_cmds(){
 cat << EOF
 
-    Launch: 
-  ${_blue}  
+    Quick and dirty dev launch help.
+
+    Launch:
+
     fxlaunch          (main command)
-    fxlaunch reset    (fxidel)
+    fxlaunch reset    (fxlrm)
     fxlaunch check    (fxinext)
-    fxlaunch dumprc   (fxirc) ${_reset} 
+    fxlaunch dumprc   (fxirc) 
 
-    Install:${_gold}
+    Install:
 
-    fxp help
-    fxp install       (fxinstall)
-  ${_reset}
+    fxp install       (fxpi)
+    fxp help          (fxph)
+    
+    Dev Utils:
+
+    fxknife           (fxpk)
 
 EOF
 }
+
+
+
 #-------------------------------------------------------------------------------
 
 # Main entry point and command dispatcher for the script.

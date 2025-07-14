@@ -34,6 +34,28 @@
   }
 
 
+  is_empty_file(){
+    local this=$1;
+    trace "Checking for empty file ($this)";
+    if [[ -s "$this" ]]; then
+      if grep -q '[^[:space:]]' "$this"; then
+        return 1;
+      else
+        return 0;
+      fi
+    fi
+    return 0;
+  }
+
+  has_subdirs(){
+    local dir="$1"
+    for d in "$dir"/*; do
+      [ -d "$d" ] && return 0
+    done
+    return 1
+  }
+
+
 
 
 # =================== startup flag =================================

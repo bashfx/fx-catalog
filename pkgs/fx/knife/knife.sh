@@ -1,8 +1,65 @@
 #!/usr/bin/env bash
+#===============================================================================
+#  __  __     __   __     __     ______   ______    
+# /\ \/ /    /\ "-.\ \   /\ \   /\  ___\ /\  ___\   
+# \ \  _"-.  \ \ \-.  \  \ \ \  \ \  __\ \ \  __\   
+#  \ \_\ \_\  \ \_\\"\_\  \ \_\  \ \_\    \ \_____\ 
+#   \/_/\/_/   \/_/ \/_/   \/_/   \/_/     \/_____/ 
+#
+#   file and text manipulation kit
+#
+#===============================================================================
+#-------------------------------------------------------------------------------
+#$ name: knife.fx 
+#$ author: qodeninja
+#$ semver: 0.3.4 
+#-------------------------------------------------------------------------------
+#=====================================code!=====================================
+# Dev Note: This is an early alpha version and will need to refactored later.
+                                                         
+#-------------------------------------------------------------------------------
+# Core Includes
+#-------------------------------------------------------------------------------
+  _is_dir(){
+    [ -n "$1" ] && [ -d "$1" ] && return 0;
+    return 1;
+  }
+
+  if _is_dir "$FX_INC_DIR"; then
+    _inc="$FX_INC_DIR";
+    _app="$FX_APP_DIR";
+  elif _is_dir "$FXI_INC_DIR"; then
+    _inc="$FXI_INC_DIR";
+    _app="$FXI_APP_DIR";
+  else 
+    printf "[ENV]. Cant locate [include] ($_inc). FX framework not installed.\n";
+    exit 1;
+  fi
+
+  source "$_inc/include.sh"; 
+
+#-------------------------------------------------------------------------------
+# Core Includes
+#-------------------------------------------------------------------------------
+
+
+
+
+# Global variables to store paths to external commands once checked
+REALPATH_CMD=""
+MD5_CMD="" # Will be md5sum or md5
+COLUMN_CMD=""
+DATE_CMD="" # Will be date (GNU or BSD)
+FIND_CMD="" # Path to the find utility
+SED_CMD="" # Path to sed utility
+SED_INPLACE_OPT="" # Option for sed -i based on GNU/BSD
+
 
 # KNIFE: Modular file utility for structured file introspection and manipulation
 
 # --- Globals ---
+KNIFE_DISABLE_HISTORY= #unused atm
+
 KNOWN_FILES_FILE="$HOME/.knife_known"
 HISTORY_FILE="$HOME/.knife_history"
 BACKUP_SUFFIX=".bak"
@@ -11,7 +68,7 @@ BACKUP_SUFFIX=".bak"
 # Set to any non-empty value to disable interactive prompts for destructive ops.
 DANGER_MODE="" # Example: DANGER_MODE="1"
 # Set to any non-empty value to bypass initial DANGER_MODE warning prompt and enable recursive search anywhere.
-DEV_MODE=""    # Example: DEV_MODE="1"
+DEV_MODE="${DEV_MODE:-}"    # Example: DEV_MODE="1"
 
 # Directories to exclude from recursive searches (case-sensitive)
 KNIFE_EXCLUDES=(
@@ -30,16 +87,11 @@ green=$'\x1B[32m';
 blue=$'\x1B[36m';
 RESET=$'\x1B[0m';
 
-# --- Utility Functions (Internal & External) ---
 
-# Global variables to store paths to external commands once checked
-REALPATH_CMD=""
-MD5_CMD="" # Will be md5sum or md5
-COLUMN_CMD=""
-DATE_CMD="" # Will be date (GNU or BSD)
-FIND_CMD="" # Path to the find utility
-SED_CMD="" # Path to sed utility
-SED_INPLACE_OPT="" # Option for sed -i based on GNU/BSD
+
+#-------------------------------------------------------------------------------
+# Core Includes
+#-------------------------------------------------------------------------------
 
 # Logs messages to stderr
 stderr() { printf "%s\n" "$@" >&2; }
@@ -53,6 +105,11 @@ error() { stderr "${red}$1${RESET}"; knife_fail; } # Note: knife_fail does not e
 warn()  { stderr "${orange}$1${RESET}"; }
 okay()  { stderr "${green}$1${RESET}"; }
 info()  { stderr "${blue}$1${RESET}"; }
+
+
+#-------------------------------------------------------------------------------
+# Core Utilities
+#-------------------------------------------------------------------------------
 
 # Checks if a command exists and stores its path in a global variable
 __check_utility() {
@@ -156,6 +213,182 @@ __check_file_exists_or_fail() {
     knife_success
   fi
 }
+
+#-------------------------------------------------------------------------------
+# Template.sh
+# complete function set copied here as some debate whether this is
+# kitchen sinking knife too much, some of the fx are from docx
+#-------------------------------------------------------------------------------
+
+  strip_leading_comment() {
+    sed 's/^[[:space:]]*#[[:space:]]//'; #dont strip all whitesapce just maybe one
+  }
+
+  escape_sed_replacement(){
+    printf '%s\n' "$1" | sed 's/[\/&\\]/\\&/g'
+  }
+
+  deref_var() {
+    local __varname="$1"
+    [[ "$__varname" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || return 1
+    eval "printf '%s' \"\$${__varname}\""
+  }
+
+  expand_vars() {
+    local raw="$1" output="" varname value
+    local prefix rest matched=1  # default to no match
+    while [[ "$raw" == *'$'* ]]; do
+      prefix="${raw%%\$*}"
+      rest="${raw#*\$}"
+      varname=$(expr "$rest" : '\([a-zA-Z_][a-zA-Z0-9_]*\)')
+      # If no valid varname, break
+      [ -z "$varname" ] && break
+      value=$(deref_var "$varname") #bash 3.2
+      rest="${rest#$varname}"
+      output+="$prefix$value"
+      raw="$rest"
+      matched=0
+    done
+    output+="$raw"
+    printf '%s\n' "$output"
+    return $matched
+  }
+
+  expand_line_vars(){
+    local ret out lineX line="$1";
+
+    [ "${opt_dev:-1}" -eq 0 ] && [ "${opt_silly:-1}" -eq 0 ] && silly "$line";
+
+    if [[ "$line" == *'$'* ]]; then
+      lineX=$(expand_vars "$line"); ret=$?;
+      if [ "${opt_dev:-1}" -eq 0 ] && [ "${opt_silly:-1}" -eq 0 ]; then
+        [ $ret -eq 0 ] && info "$lineX <--expanded";
+        [ $ret -eq 1 ] && note "$lineX --> skipped";
+      fi
+      out="$lineX";
+      ret=0;
+    else
+      out="$line";
+      ret=1;
+    fi
+    echo -e "$out";
+    return $ret;
+  }
+
+  replace_escape_codes(){
+    local input ret res shebang esc_shebang;
+
+    if [ -p /dev/stdin ]; then
+      input="" # Initialize empty
+      while IFS= read -r line || [[ -n $line ]]; do
+        line=$(expand_line_vars "$line");ret=$?;
+        input+=$line$'\n'
+      done
+    elif [ -n "$1" ]; then
+      input="$1"
+    else
+      error "Error: No input provided to replace_escape_codes"
+      return 1
+    fi
+
+    #shebang needs special babysitting for sed
+    shebang="#!/usr/bin/env bash";
+    esc_shebang=$(escape_sed_replacement "$shebang");
+
+    #replace data
+    input="${input//%date%/$(date +'%Y-%m-%d %H:%M:%S')}";
+
+    # Replace color codes and glyphs.
+    echo "$input" |
+      sed "s|\${x}|$x|g" | sed "s|\${rev}|$revc|g" |
+      sed "s|\${r}|$red|g" | sed "s|\${o}|$orange|g" | sed "s|\${c}|$cyan|g" |
+      sed "s|\${g}|$green|g" | sed "s|\${isnek}|$snek|g" | sed "s|\${it}|$itime|g" |
+      sed "s|\${id}|$delta|g" | sed "s|\${il}|$lambda|g" | sed "s|\${isp}|$spark|g" |
+      sed "s|\${spark}|$spark|g" | sed "s|\${star}|$star|g" | sed "s|\${bolt}|$bolt|g" |
+      sed "s|\${b2}|$blue2|g" | sed "s|\${w2}|$white2|g" | sed "s|\${p}|$purple|g" |
+      sed "s|\${u}|$grey|g" | sed "s|\${y}|$yellow|g" | sed "s|\${b}|$blue|g" |
+      sed "s|\${w}|$white|g" | sed "s|\${u2}|$grey2|g" | sed "s|\${r2}|$red2|g" |
+      sed "s|\${bld}|$bld|g" | sed "s|\${line}|$line|g" | sed "s|\${LINE}|$LINE|g" |
+      sed "s|\${ff}|$flag_on|g" | sed "s|\${fo}|$flag_off|g" | sed "s|\${shebang}|$esc_shebang|g"
+
+    return 0
+  }
+
+  sed_block(){
+    local id="$1" target="$2" pre="^[#]+[=]+" post=".*" str end;
+    if [[ -f $target ]]; then
+      str="${pre}${id}[:]?[^\!=\-]*\!${post}";
+      end="${pre}\!${id}[:]?[^\!=\-]*${post}";
+      sed -rn "1,/${str}/d;/${end}/q;p" "$target" | strip_leading_comment | replace_escape_codes;
+      return 0;
+    fi
+    # Let the caller handle the error
+    return 1;
+  }
+
+  block_print(){
+    local lbl="$1" target="$2" IFS res ret;
+    res=$(sed_block "$lbl" "$target"); ret=$?;
+    if [ $ret -ne 0 ] || [ -z "$res" ]; then
+      error "[KN] Block '$lbl' not found or empty in '$target'";
+      return 1;
+    fi
+    inline_block_print "$res";
+    return 0;
+  }
+
+
+  inline_block_print(){
+    local res="$1" target="$2" IFS res ret;
+    if [ -z "$res" ]; then
+      error "[KN] Inline block content empty."
+      return 1;
+    fi
+    printf '%s\n' "$res" | while IFS= read -r line; do
+      if [[ $lbl =~ ^(doc|inf|rc|link|conf).* ]]; then
+        printf '%b\n' "$line"
+      else
+        printf '%s\n' "$line"
+      fi
+    done
+    return 0;
+  }
+
+
+
+
+
+  get_block(){
+    local res ret src=$1 lbl=$2;
+    res=$(sed -n "/#### ${lbl} ####/,/########/p" "$src");
+    [ -z "$res" ] && ret=1 || ret=0;
+    echo "$res";
+    return $ret;
+  }
+
+
+	get_embedded_doc(){
+    local str ret src=$1 lbl=$2;
+    trace "Getting embedded link. (label=$lbl)";
+    [ -z "$lbl" ] || [ -z "$src" ]||[ ! -f "$src" ]  && { 
+      fatal "Cant read embedded doc invalid args ($1) ($2)";
+      return 1;
+    }
+    str=$(block_print "$lbl" "$src");
+    
+    if [ ${#str} -gt 0 ]; then
+      echo -e "$str"
+    else 
+      error "Problem reading embedded link";
+      exit 1;
+    fi
+	}
+
+
+#-------------------------------------------------------------------------------
+#  Utilities
+#-------------------------------------------------------------------------------
+
 
 # Escapes special characters for use in sed literal string patterns
 _escape_sed_pattern_literal() {
@@ -500,6 +733,8 @@ knife_split() {
   knife_success
 }
 
+# @todo : refactor there may be some issues with escaping/hydrating values.
+
 # knife inject <src_file> <target_file>
 knife_inject() {
   local src="$1" target="$2"
@@ -599,28 +834,36 @@ knife_metadel() {
   fi
 }
 
-
+# @trash : keeping this here for now until later clean up
 # knife logo <file>
-knife_logo() {
-  local file="$1"
-  __check_file_exists_or_fail "$file" || return 1
+# knife_logo() {
+#   local file="$1"
+#   __check_file_exists_or_fail "$file" || return 1
 
-  # Look for logo markers
-  local start_marker="### KNIFE_LOGO_START ###"
-  local end_marker="### KNIFE_LOGO_END ###"
+#   # Look for logo markers
+#   local start_marker="### KNIFE_LOGO_START ###"
+#   local end_marker="### KNIFE_LOGO_END ###"
 
-  # Find line numbers of markers
-  local start_line=$(grep -Fn "$start_marker" "$file" | cut -d: -f1 | head -n1)
-  local end_line=$(grep -Fn "$end_marker" "$file" | cut -d: -f1 | head -n1)
+#   # Find line numbers of markers
+#   local start_line=$(grep -Fn "$start_marker" "$file" | cut -d: -f1 | head -n1)
+#   local end_line=$(grep -Fn "$end_marker" "$file" | cut -d: -f1 | head -n1)
 
-  if [[ -n "$start_line" && -n "$end_line" && "$start_line" -lt "$end_line" ]]; then
-    # Print lines between markers (exclusive of markers themselves) and strip leading #
-    awk -v start="$start_line" -v end="$end_line" 'NR > start && NR < end { sub(/^#+ ?/, ""); print }' "$file"
-    # Removed redundant knife_success
-  else
-    info "No logo block found (or markers malformed) in ${file}. Expected '${start_marker}' to '${end_marker}'."
-    knife_fail
-  fi
+#   if [[ -n "$start_line" && -n "$end_line" && "$start_line" -lt "$end_line" ]]; then
+#     # Print lines between markers (exclusive of markers themselves) and strip leading #
+#     awk -v start="$start_line" -v end="$end_line" 'NR > start && NR < end { sub(/^#+ ?/, ""); print }' "$file"
+#     # Removed redundant knife_success
+#   else
+#     info "No logo block found (or markers malformed) in ${file}. Expected '${start_marker}' to '${end_marker}'."
+#     knife_fail
+#   fi
+# }
+
+# @note : logo wont have marker sentinels you need to know which line numbers its on
+# @note : made this more general purpose as block by range n,m
+knife_block_range(){
+  local src=$1 r1=${2:-3} r2=${3:-9};
+  local logo=$(sed -n "${r1},${r2} p" $src)
+  printf "%s" "${logo//#/ }";
 }
 
 # knife copy <source_file> <num_lines> <output_file>
@@ -911,46 +1154,18 @@ knife_cleanup() {
   fi
 }
 
+  _destructive_guard(){
+    local cmd="$1" file_arg="$2" confirm_path='' canon_confirm_path='';
 
-# --- Entry Point ---
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-
-  # Centralized command dispatch
-  dispatch() {
-    local cmd="$1"
-    shift # Remove cmd from $@
-
-    local arg1="$1" arg2="$2" arg3="$3" # Capture up to 3 arguments. History can take more, handled specifically.
-
-    local target_file_for_prompt="" # Used only for safety prompt context
-
-    # Determine target_file_for_prompt based on NEW argument order
-    case "$cmd" in
-      (line|delete|split|has|show) target_file_for_prompt="$arg2" ;; # <arg1> <file>
-      (banner|block|meta|logo|lines|extract|keys|val) target_file_for_prompt="$arg1" ;; # <label> <file> or <file> for meta/logo/keys/val
-      (find) # find <type> <file> or find <type> <key> <file>
-          if [[ "$arg1" == "key" ]]; then target_file_for_prompt="$arg3"; # find key KEY FILE
-          elif [[ "$arg1" == "values" ]]; then target_file_for_prompt="$arg2"; # find values FILE
-          fi ;;
-      (setv|defv) target_file_for_prompt="$arg3" ;; # <key> <value> <file>
-      (getv) target_file_for_prompt="$arg2" ;; # <key> <file>
-      (linked|link|unlink|inject) target_file_for_prompt="$arg2" ;; # <src_file> <target_file>
-      (copy) target_file_for_prompt="$arg3" ;; # <source_file> <num_lines> <output_file> -> target is source file
-      (metaget|metaset|metadel) target_file_for_prompt="$arg2" ;; # <key> <file> for get/del, <key> <value> <file> for set
-      (cleanup) ;; # Cleanup has its own internal prompt, so no external target file
-      (*) ;; # Other commands (history, search) don't have a direct target file for this prompt logic
-    esac
-
-    # Safety Guard for Destructive Operations
-    # Check if command is destructive AND if a target file was identified (or if it's cleanup)
     if _is_destructive_command "$cmd"; then # Check if the command *type* is destructive
-      local confirm_path="$target_file_for_prompt"
+      confirm_path="$file_arg";
+
       if [[ "$cmd" == "cleanup" ]]; then
         confirm_path="$HOME" # Cleanup operates broadly, so use HOME as reference for prompt
       fi
       
       if [[ -n "$confirm_path" ]]; then # Only prompt if a relevant path can be determined
-        local canon_confirm_path=$(_canonical_path_of "$confirm_path")
+        canon_confirm_path=$(_canonical_path_of "$confirm_path")
         # Execute first conditional test, then chain with logical AND (&&)
         if [[ -z "$DANGER_MODE" ]] && ! _is_home_dir "$canon_confirm_path"; then
           warn "WARNING: You are attempting a destructive operation ('${cmd}') outside of your HOME directory:"
@@ -962,46 +1177,14 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
             return 1 # Return failure to dispatch, which will propagate
           fi
         fi
-      fi
-    fi
 
-    # Execute command with arguments reordered for the new function signatures
-    case "$cmd" in
-      (line) knife_line "$arg1" "$arg2" ;;
-      (lines)
-        if [[ "$arg1" == "quick" ]]; then knife_lines_quick "$arg2"; else error "Unknown 'lines' subcommand: $arg1"; return 1; fi ;;
-      (banner) knife_banner "$arg1" "$arg2" ;;
-      (block) knife_block "$arg1" "$arg2" ;;
-      (linked) knife_linked "$arg1" "$arg2" ;;
-      (link) knife_link "$arg1" "$arg2" ;;
-      (unlink) knife_unlink "$arg1" "$arg2" ;;
-      (getv) knife_getv "$arg1" "$arg2" ;; # getv KEY FILE
-      (keys) knife_keys "$arg1" ;; # keys FILE
-      (val) knife_val "$arg1" "$arg2" ;; # val VALUE_PATTERN FILE
-      (setv|defv) knife_setv "$arg1" "$arg2" "$arg3" ;; # setv KEY VALUE FILE
-      (split) knife_split "$arg1" "$arg2" ;;
-      (inject) knife_inject "$arg1" "$arg2" ;;
-      (delete) knife_delete_line "$arg1" "$arg2" ;;
-      (extract) knife_extract "$arg1" "$arg2" ;;
-      (meta) knife_meta "$arg1" ;;
-      (metaget) knife_metaget "$arg1" "$arg2" ;;
-      (metaset) knife_metaset "$arg1" "$arg2" "$arg3" ;;
-      (metadel) knife_metadel "$arg1" "$arg2" ;;
-      (logo) knife_logo "$arg1" ;;
-      (copy) knife_copy_lines "$arg1" "$arg2" "$arg3" ;; # copy SOURCE_FILE NUM_LINES OUTPUT_FILE
-      (has) knife_has "$arg1" "$arg2" ;;
-      (show) knife_show "$arg1" "$arg2" ;;
-      (history) knife_history "$@" ;; # Pass all remaining args directly for history
-      (search) knife_search_here "$arg1" ;;
-      (cleanup) knife_cleanup ;;
-      (*) error "Unknown command: $cmd"; return 1 ;;
-    esac
+      fi
+
+    fi
+    return 0;
   }
 
-  main() {
-    # Check all critical external dependencies at startup
-    __check_all_dependencies || exit 1
-
+  _danger_mode_guard(){
     # Initial DANGER_MODE warning and prompt
     if [[ -n "$DANGER_MODE" ]]; then
       warn "WARNING: Knife is running in DANGER_MODE! Destructive operations may proceed without confirmation."
@@ -1014,6 +1197,186 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
         fi
       fi
     fi
+    return 0;
+  }
+
+
+# @note : stderr introduces new opt_file_arg as a fix for this mess. --file=path (refactor later)
+
+  _target_file(){
+    local cmd="$1" file_arg='';
+    # Determine target_file_for_prompt based on NEW argument order
+    case "$cmd" in
+      (line|delete|split|has|show) file_arg="$2" ;; # <arg1> <file>
+      (banner|block|meta|logo|lines|extract|keys|val) file_arg="$1" ;; # <label> <file> or <file> for meta/logo/keys/val
+      (find) 
+          if [[ "$arg1" == "key" ]]; then  # find <type> <file> or find <type> <key> <file>
+            target_file_for_prompt="$3"; # find key KEY FILE
+          elif [[ "$arg1" == "values" ]]; 
+          then target_file_for_prompt="$2"; # find values FILE
+          fi ;;
+      (setv|defv) file_arg="$3" ;; # <key> <value> <file>
+      (getv) file_arg="$2" ;; # <key> <file>
+      (linked|link|unlink|inject) file_arg="$2" ;; # <src_file> <target_file>
+      (copy) file_arg="$3" ;; # <source_file> <num_lines> <output_file> -> target is source file
+      (metaget|metaset|metadel) file_arg="$2" ;; # <key> <file> for get/del, <key> <value> <file> for set
+      (cleanup) ;; # Cleanup has its own internal prompt, so no external target file
+      (*) ;; # Other commands (history, search) don't have a direct target file for this prompt logic
+    esac
+    echo "$file_arg";
+  }
+
+
+# @todo : this needs a major refactor LOL
+
+  # Centralized command dispatch
+  dispatch() {
+    local cmd="$1"
+    shift # Remove cmd from $@
+
+    local arg1="$1" arg2="$2" arg3="$3" # Capture up to 3 arguments. History can take more, handled specifically.
+
+    local target_file_for_prompt="" # Used only for safety prompt context
+
+    file_arg=$(_target_file "$cmd" "$@");
+
+    # Safety Guard for Destructive Operations
+    # Check if command is destructive AND if a target file was identified (or if it's cleanup)
+    # if _is_destructive_command "$cmd"; then # Check if the command *type* is destructive
+    #   local confirm_path="$target_file_for_prompt"
+    #   if [[ "$cmd" == "cleanup" ]]; then
+    #     confirm_path="$HOME" # Cleanup operates broadly, so use HOME as reference for prompt
+    #   fi
+      
+    #   if [[ -n "$confirm_path" ]]; then # Only prompt if a relevant path can be determined
+    #     local canon_confirm_path=$(_canonical_path_of "$confirm_path")
+    #     # Execute first conditional test, then chain with logical AND (&&)
+    #     if [[ -z "$DANGER_MODE" ]] && ! _is_home_dir "$canon_confirm_path"; then
+    #       warn "WARNING: You are attempting a destructive operation ('${cmd}') outside of your HOME directory:"
+    #       warn "  Target: ${canon_confirm_path}"
+    #       info "Are you sure you want to proceed? (y/N)"
+    #       read -r -p "Confirm: " response
+    #       if ! [[ "$response" =~ ^[Yy]$ ]]; then
+    #         error "Operation cancelled by user."
+    #         return 1 # Return failure to dispatch, which will propagate
+    #       fi
+    #     fi
+    #   fi
+    # fi
+    
+    if _destructive_guard "$cmd" "$file_arg"; then
+
+    fi
+
+
+    # Execute command with arguments reordered for the new function signatures
+    case "$cmd" in
+      (line) knife_line "$arg1" "$arg2" ;;
+      (lines) 
+        if [[ "$arg1" == "quick" ]]; then  # @note : this probably does need two part command
+          knife_lines_quick "$arg2"; 
+        else 
+          error "Unknown 'lines' subcommand: $arg1"; return 1; 
+        fi
+      ;;
+      (banner) knife_banner "$arg1" "$arg2" ;;
+      (block) knife_block "$arg1" "$arg2" ;;
+      (blockr) knife_block_range "$arg1" "$arg2" "$arg3" ;;
+      (logo) knife_block_range "$arg1" "$arg2" "$arg3"  ;; #alias
+
+      (linked) knife_linked "$arg1" "$arg2" ;;
+      (link) knife_link "$arg1" "$arg2" ;;
+      (unlink) knife_unlink "$arg1" "$arg2" ;;
+
+      (getv) knife_getv "$arg1" "$arg2" ;; # getv KEY FILE
+      (keys) knife_keys;; # 1arg# keys FILE
+      (val) knife_val "$arg1" "$arg2" ;; # val VALUE_PATTERN FILE
+      (setv|defv) knife_setv "$arg1" "$arg2" "$arg3" ;; # setv KEY VALUE FILE
+      (split) knife_split "$arg1" "$arg2" ;;
+      (inject) knife_inject "$arg1" "$arg2" ;;
+      (delete) knife_delete_line "$arg1" "$arg2" ;;
+      (extract) knife_extract "$arg1" "$arg2" ;;
+      (meta) knife_meta "$arg1" ;;
+      (metaget) knife_metaget "$arg1" "$arg2" ;;
+      (metaset) knife_metaset "$arg1" "$arg2" "$arg3" ;;
+      (metadel) knife_metadel "$arg1" "$arg2" ;;
+
+      (copy) knife_copy_lines "$arg1" "$arg2" "$arg3" ;; # copy SOURCE_FILE NUM_LINES OUTPUT_FILE
+      (has) knife_has "$arg1" "$arg2" ;;
+      (show) knife_show "$arg1" "$arg2" ;;
+      (history) knife_history "$@" ;; # Pass all remaining args directly for history
+      (search) knife_search_here "$arg1" ;;
+      (cleanup) knife_cleanup ;;
+      (*) error "Unknown command: $cmd"; return 1 ;;
+    esac
+  }
+
+
+
+  dispatch_(){
+    local call="$1" arg="$2"  cmd=''file_arg='' ret;
+
+    file_arg=$(_target_file "$@");
+
+    case $call in
+
+      (lines)
+        if [[ "$1" == "quick" ]]; then   # @note : this probably does need two part command
+          knife_lines_quick "$2"; 
+        else 
+          error "Unknown 'lines' subcommand: $1"; return 1; 
+        fi
+      ;;
+      (line) cmd='knife_line' ;; # 2args
+      (banner)    cmd='knife_banner'  ;; # 2args
+      (block)     cmd='knife_block' ;; # 2args
+      (blockr)    cmd='knife_block_range' ;; # 3args
+      (logo)      cmd='knife_block_range' ;; # 3args#alias
+      (linked)    cmd='knife_linked' ;; # 2args
+      (link)      cmd='knife_link' ;; # 2args
+      (unlink)    cmd='knife_unlink' ;; # 2args
+      (getv)      cmd='knife_getv' ;; # 2args # getv KEY FILE
+      (keys)      cmd='knife_keys';; # 1arg# keys FILE
+      (val)       cmd='knife_val' ;; # 2args # val VALUE_PATTERN FILE
+      (setv|defv) cmd='knife_setv' ;; # 3args # setv KEY VALUE FILE
+      (split)     cmd='knife_split' ;; # 2args
+      (inject)    cmd='knife_inject' ;; # 2args
+      (delete)    cmd='knife_delete_line' ;; # 2args
+      (extract)   cmd='knife_extract' ;; # 2args
+      (meta)      cmd='knife_meta' ;; # 1arg
+      (metaget)   cmd='knife_metaget' ;; # 2args
+      (metaset)   cmd='knife_metaset' ;; # 3args
+      (metadel)   cmd='knife_metadel' ;; # 2args
+      (copy)      cmd='knife_copy_lines' ;; # 3args # copy SOURCE_FILE NUM_LINES OUTPUT_FILE
+      (has)       cmd='knife_has' ;; # 2args
+      (show)      cmd='knife_show' ;; # 2args
+      (history)   cmd='knife_history' ;; #all args # Pass all remaining args directly for history
+      (search)    cmd='knife_search_here' ;; # 1arg
+      (cleanup)   cmd='knife_cleanup' ;;
+      (help|?)    cmd="usage";;
+      (noop)      cmd="noop";;
+    esac
+
+    if [ -n "$cmd" ] && function_exists "$cmd"; then
+      shift # remove the command so we can pass the rest
+      "$cmd" "$@";   # Pass all extra arguments if cmd is defined
+      ret=$?;
+    else
+      __errbox "Dispatch error, could not find function ($cmd) for command ($call)";
+    fi
+    [ -n "$err" ] && fatal "$err";
+    echo -ne "\n\n";
+
+    return $ret;
+
+
+  }
+
+
+  main() {
+    # Check all critical external dependencies at startup
+    __check_all_dependencies || exit 1
+    _danger_mode_guard;
 
     if [[ "$#" -eq 0 ]]; then
       info "Usage: knife <command> [args...]"
@@ -1031,5 +1394,109 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     # The return code of dispatch (and thus the last command executed) will be the script's exit code
   }
 
-  main "$@"
+
+
+
+
+
+
+# --- Entry Point ---
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+
+  orig_args=("${@}")
+  options "${orig_args[@]}";
+
+    # Filter out flags to get positional arguments for main().
+    args=()
+    for arg in "${orig_args[@]}"; do
+      [[ "$arg" == -* ]] && continue
+      args+=("$arg")
+    done
+
+    main "${args[@]}";
+    exit $?;
+
 fi
+
+
+
+
+  _get_help_text(){
+    # Using a here-document is more robust than parsing from comments.
+    # It aligns with Pillar III (Modularity) and V (Clarity).
+    # The color variables (${b}, ${x}, etc.) are expanded because we use `EOF`
+    # instead of `'EOF'`.
+    cat <<EOF
+
+  ${b}KNIFE [command] [--flags|-f] ${x}
+
+  ${w2}[ Analysis ]${x}
+
+  ${o}line <n> <file>${x}      - print contents of file at line n
+  ${o}lines quick <file>${x}   - prints the number of lines in a file
+
+  ${o}has <str> <file>${x}     - boolean test if file has string (anywhere) 
+  ${o}show <str> <file>${x}    - show all lines in a file that match string (anywhere) 
+  ${o}search <strstring>${x}   - find all files in the current tree that match string
+
+  ${o}history <params>${x}     - find all files in the current dir tree that match string
+    available params :time :vanity :id :cmd :params :path_hash :content_hash (:all)
+
+
+  ${w2}[ Manipulation ]${x}
+  
+  ${o}delete <n> <file>${x}    - delete line N from file
+  ${o}split <n> <file>${x}     - split a file into two at line N
+  ${o}inject <src> <dest>${x}  - copies the contents of file B into file A, at every include banner.
+  ${o}copy <src> <n> <out>${x}  - copies n lines from src to out 
+  ${o}copyr <src> <n> <m> <out>${x} - copies range n-m lines from src to out 
+
+  ${o}block  <lbl> <file>${x}   - prints block of a file delim by labeled sentinels [alias=extract]
+  ${o}blockr <lbl> <file>${x}   - prints block of a file via line number range (inclusive)
+  ${o}logo   <file> <n> <m>${x} - alias of blockr
+
+  ${o}banner <lbl> <file>${x}   - print the banner of a file delim by a flag sentinel (WIP)
+
+
+
+  ${w2}[ Linking ]${x}
+
+  ${o}link <src> <target>${x}        - bind two files together (source), such that A loads B
+  ${o}unlink <src> <target>${x}      - remove the binding of two files
+  ${o}linked <src> <target>${x}      - check if two files are linked
+
+  ${w2}[ Embedded Vars ]${x}
+  ${o}meta    <file>${x}             - dump all comment meta values # key:val found in a file
+  ${o}metaget <key> <file>${x}       - print a single meta value by key (if it exists) (mult?)
+  ${o}metaset <key> <val> <file>${x} - add or set a meta value, in a file
+  ${o}metadel <key> <file>${x}       - del a meta value from a file (mult?) 
+
+  ${w2}[ Shell Vars ]${x}
+
+  ${o}getv <key> <file>${x}          - get the value(s) of a shell key found in a file
+  ${o}setv <key> <val> <file>${x}    - set a shell key in a file [alias=defv]
+  ${o}keys <file> ${x}               - list all shell keys in a file
+  ${o}val <str> <file> ${x}       - fuzzy search for keys with partial value in a file
+
+
+
+
+  ${o}history [ :fields... | :all ] [file_query...]${x} - 
+
+  ${o}cleanup${x}   ${x} 
+
+  ${o} ${x}  - 
+
+  ${w2}[ Dev ]${x}
+
+  ${o}insp  ${x} - debug available functions
+  ${o}dem   ${x} - debug embedded docs
+  ${o}dlink ${x} - debug profile link output
+  ${o}vars  ${x} - dump vars with prefix FX_*
+
+  ${w2}[ Flags ]${x}
+
+  ${o}${ff} [-d] debug${x}, ${o}${ff} [-t] trace${x}, ${o}${ff} [-V] verbose${x}, ${o}${ff} [-q] quiet${x}, ${o}${ff} [-f] flags${x}, ${o}${ff} [-D] dev${x}
+EOF
+  }
+

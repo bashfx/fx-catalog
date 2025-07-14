@@ -13,8 +13,8 @@
 #===============================================================================
 #-------------------------------------------------------------------------------
 #$ name: devfx (becomes fx in runtime)
-#$ author: qodeninja & Shebang
-#$ semver: 0.2.0 
+#$ author: Qodeninja
+#$ semver: 0.4.0 
 #-------------------------------------------------------------------------------
 #=====================================code!=====================================
 
@@ -22,22 +22,46 @@
   
   SELF_PATH="$0";
 
+  _is_dir(){
+    [ -n "$1" ] && [ -d "$1" ] && return 0;
+    return 1;
+  }
 
-  if [ -n "$FX_INC_DIR" ]; then
-    _inc="$FX_INC_DIR"; #fx
-  else
-    if [ -z "$FXI_INC_DIR" ]; then
-      #missing !
-      printf "Environment is invalid, missing include directory!";
-      exit 1;
-    else
-      _inc="$FXI_INC_DIR/include.sh"; #init
-      FX_MODE='SETUP_PENDING';
-    fi
+
+#-------------------------------------------------------------------------------
+# Core Includes
+#-------------------------------------------------------------------------------
+
+
+  if _is_dir "$FX_INC_DIR"; then
+    _inc="$FX_INC_DIR";
+    _app="$FX_APP_DIR";
+  elif _is_dir "$FXI_INC_DIR"; then
+    _inc="$FXI_INC_DIR";
+    _app="$FXI_APP_DIR";
+  else 
+    printf "[ENV]. Cant locate [include] ($_inc). Fatal.\n";
+    exit 1;
   fi
 
+#-------------------------------------------------------------------------------
+# Core Includes
+#-------------------------------------------------------------------------------
 
-  source "$_inc"; unset _inc;
+  source "$_inc/include.sh"; 
+
+  if _is_dir "$_app/knife"; then
+    _knife="$_app/knife/knife.sh";
+  else 
+    printf "[ENV] Cant locate [kinfe]. Fatal.\n";
+    exit 1;
+  fi
+
+  $_knife;
+
+#-------------------------------------------------------------------------------
+# Core Includes
+#-------------------------------------------------------------------------------
 
 
   fx_var_list=(FX_BIN FX_LIB FX_ETC FX_DATA FX_STATE FX_RC FX_APP_NAME);
@@ -134,13 +158,14 @@ EOF
 
 export FX_INSTALLED=0;
 export FX_APP_NAME="$FX_APP_NAME";
-export FX_PROFILE="$FX_PROFILE";
-export FX_BIN="$FX_BIN";
-export FX_LIB="$FX_LIB";
-export FX_INC="$FX_INC";
-export FX_ETC="$FX_ETC";
-export FX_DATA="$FX_DATA";
-export FX_STATE="$FX_STATE";
+export FX_PROFILE="$FX_PROFILE"; 
+export FX_BIN_DIR="$FX_BIN";
+export FX_LIB_DIR="$FX_LIB";
+export FX_INC_DIR="$FX_INC";
+export FX_APP_DIR="$FX_APP";
+export FX_ETC_DIR="$FX_ETC";
+export FX_DATA_DIR="$FX_DATA";
+export FX_STATE_DIR="$FX_STATE";
 export FX_RC="$FX_ETC/fx.rc";
 EOF
   }
@@ -173,38 +198,6 @@ EOF
 
 # @info : options() moved to stdopts.sh as a general library function
 
-#-------------------------------------------------------------------------------
-#  Util Funcs
-#-------------------------------------------------------------------------------
-
-
-
-
-  is_empty_file(){
-    local this=$1;
-    trace "Checking for empty file ($this)";
-    if [[ -s "$this" ]]; then
-      if grep -q '[^[:space:]]' "$this"; then
-        return 1;
-      else
-        return 0;
-      fi
-    fi
-    return 0;
-  }
-
-  has_subdirs(){
-    local dir="$1"
-    for d in "$dir"/*; do
-      [ -d "$d" ] && return 0
-    done
-    return 1
-  }
-
-
-  function_exists(){
-    [ -n "$1" ] && declare -F "$1" >/dev/null
-  }
 
 #-------------------------------------------------------------------------------
 # INIT
@@ -217,13 +210,19 @@ EOF
       info "[VAR] FX vars loading from init ...";
       export FX_APP_NAME='fx';
       app="$FX_APP_NAME";
+
+
+
       export FX_BIN="${FX_BIN:-$XDG_FX_BIN/$app}";
-      export FX_LIB="${FX_LIB:-$XDG_FX_LIB/$app}";
-      export FX_INC="${FX_INC:-$FX_LIB/inc}";
+
       export FX_ETC="${FX_ETC:-$XDG_FX_CONFIG/$app/etc}";
       export FX_DATA="${FX_DATA:-$XDG_FX_SHARE/$app}";
       export FX_STATE="${FX_STATE:-$XDG_FX_STATE/$app}";
       export FX_RC="${FX_RC:-${FX_ETC}/fx.rc}";
+
+      export FX_LIB="${FX_LIB:-$XDG_FX_LIB/$app}";
+      export FX_INC="${FX_INC:-$FX_LIB/inc}";
+      export FX_APP="${FX_LIB}/pkgs/fx"; #location of existing "apps"
 
       export FX_PROFILE=${FX_PROFILE:-$(canonical_profile)}; #allow a prev set
     fi
@@ -733,7 +732,9 @@ EOF
   main(){
     local str ret=1;
 
-    __logo "$SELF_PATH" 3 12; ret=$?;
+    #using knife source is determined top of file
+    str=$($_knife logo "$SELF_PATH" 3 12); ret=$?;
+    info "$str";
 
     [ $opt_flags -eq 0 ] && { stat_check "${orig_args[@]}"; } # show status printout
 

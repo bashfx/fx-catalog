@@ -18,11 +18,13 @@
   
   # __debug_mode(){ [ -z "$opt_debug" ] && return 1; [ $opt_debug -eq 0 ] && return 0 || return 1; }
   # __quiet_mode(){ [ -z "$opt_quiet" ] && return 1; [ $opt_quiet -eq 0 ] && return 0 || return 1; }
-  opt_silly=${opt_silly:-1};
-  opt_trace=${opt_trace:-1};
   opt_debug=${opt_debug:-1};
+  opt_quiet=${opt_quiet:-1};
+  opt_trace=${opt_trace:-1};
+  opt_silly=${opt_silly:-1};
   opt_yes=${opt_yes:-1};
-
+  opt_dev=${opt_dev:-1};
+  opt_flags=${opt_flags:-1};
 
 
 #-------------------------------------------------------------------------------
@@ -32,7 +34,7 @@
 # @lbl options
 
   global_options(){
-
+    noop;
   }
 
   local_options(){
@@ -40,19 +42,13 @@
     local err
 
     #these can be overwritten
-    opt_debug=${opt_debug:-1};
-    opt_quiet=${opt_quiet:-1};
-    opt_trace=${opt_trace:-1};
-    opt_silly=${opt_silly:-1};
-    opt_yes=${opt_yes:-1};
-    opt_dev=${opt_dev:-1};
-    opt_flags=${opt_flags:-1};
 
     # Process arguments in a single loop for clarity and efficiency.
     for arg in "$@"; do
       case "$arg" in
         --yes|-y)           opt_yes=0;;
-        --flag*|-f)         opt_flags=0;;
+        --flag*|-F)         opt_flags=0;;
+        --file*|-F)         opt_file=0; opt_file_arg="$arg";; # should be like --file=path
         --debug|-d)         opt_debug=0;;
         --tra*|-t)          opt_trace=0;;
         --sil*|--verb*|-V)  opt_silly=0;;
@@ -83,8 +79,8 @@
 
 
   options(){
-    global_options;
-    local_options;
+    global_options "${@}";
+    local_options "${@}";
   }
 
 # =================== startup flag =================================

@@ -24,7 +24,7 @@
 # Printers
 #-------------------------------------------------------------------------------
 
-
+# @note : logo function moved to knife, sans color and quiet
   __logo(){
     local src=$1 r1=${2:-3} r2=${3:-9};
     if [ -z "$opt_quiet" ] || [ $opt_quiet -eq 1 ]; then
@@ -218,3 +218,4 @@
   trap handle_input CONT
   trap fin EXIT
 
+ echo "STDERR loaded with debug ($opt_dev)"
