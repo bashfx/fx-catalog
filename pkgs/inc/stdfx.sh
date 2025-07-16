@@ -9,35 +9,6 @@
 
   echo "loaded stdfx.sh" >&2;
 
-  # question: do functions that dont explict return value auto return 0? 
-  # answer: No. A Bash function implicitly returns the exit status of the *last command* that was executed. If that last command succeeds, its exit status is 0, which becomes the function's return value. If it fails, a non-zero exit status is returned.
-
-  # question: when a function calls a subfunc or command, does the return value propogate?
-  # answer: Yes, the exit status of the sub-function or command will become the return value of the calling function, *if and only if* it is the last command executed. If you run another command after the sub-function, the return value of that second command will be the one that propagates. To capture an earlier exit code, you must explicitly use `return $?` or save `$?` to a variable.
-
-  # question: for debug-like functions, how do I get the name of the parent function that called me?
-  # answer: The built-in `${FUNCNAME[@]}` array holds the entire call stack. `${FUNCNAME[0]}` is the current function, `${FUNCNAME[1]}` is the caller (parent), `${FUNCNAME[2]}` is the grandparent, and so on. You can use this to create powerful debug traces.
-
-  # question: what is a regex that matches a valid UNIX/POSIX path (filename)?
-  # answer: This is famously tricky because a POSIX filename can contain any character except NUL (`\0`) and forward-slash (`/`). A simple regex for a single path component (a filename) would be `^[^/]+$`. However, for validation, it is almost always better to use `test -e` to see if a path actually exists, rather than trying to validate its characters with a complex regex.
-
-  # question: what is a regex that matches a valid UNIX/BASH/POSIX variable name?
-  # answer: The standard regex for a POSIX-compliant variable/function name is `^[a-zA-Z_][a-zA-Z0-9_]*$`. It must start with a letter or underscore, followed by zero or more letters, numbers, or underscores. This is correctly implemented in the `is_name` function.
-
-  #followup: Ive seen function names like prefix::function, which I suppose is not POSIX compliant. Are there are variations like this that are supported by Bash not nec POSIX-compliant?
-  #answer: You're right, `prefix::function` is not POSIX compliant. POSIX requires identifiers to start with a letter or underscore and contain only alphanumeric characters and underscores. However, Bash allows a broader range of characters in function names, including colons, especially when using "nameref" or other advanced features. While these names might work in Bash, they are not portable to other POSIX-compliant shells.
-
-
-  # question: what is a regex that matches a valid UNIX/BASH/POSIX command name?
-  # answer: For shell functions, aliases, and built-ins, the regex is the same as for a variable name: `^[a-zA-Z_][a-zA-Z0-9_]*$`. For external commands on the filesystem, the filename can contain other characters (like `-` or `.`), but must not contain a `/` to be callable without a path.
-
-  # question: what are the sub commands used in this file (grep, find, etc) that might differ across OS?
-  # answer: The primary external commands in this file that can have significant portability issues between GNU/Linux and BSD/macOS are:
-  #   - `find`: GNU `find` has many more options (like `-print0`, `-quit`, `-printf`) than its BSD counterpart. The use of `-print0` with `xargs -0` is generally a safe and portable pattern.
-  #   - `realpath`: This is a standard GNU coreutil but is often not installed by default on macOS. Scripts should check for its existence or have a fallback.
-  #   - `grep`: GNU `grep` is more powerful (e.g., `-P` for PCRE). Using basic regex and POSIX character classes like `[[:space:]]` is generally safe.
-  #   - `file`: The exact text output of the `file` command can vary slightly between systems, which might affect the `is_script` function if the patterns are too strict.
-
 
 #-------------------------------------------------------------------------------
 # Utils
@@ -435,7 +406,7 @@
       # Use git rev-parse to find the top-level directory.
       # The -C option runs git as if it were started in <path>.
       # The command's exit code is passed through, and stderr is suppressed.
-      command git -C "$search_dir" rev-parse --show-toplevel 2>/dev/null | realpath
+      command git -C "$search_dir" rev-parse --show-toplevel 2>/dev/null
     else
       #local markers=("package.json" "pyproject.toml" "composer.json" "pom.xml" ".git" ".hg" ".svn")
       local markers=(".git");

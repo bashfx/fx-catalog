@@ -174,52 +174,10 @@ stdfx_driver() {
     esac
 }
 
-auto_main() {
-    local passed=0
-    local failed=0
 
-    run_test() {
-        local fn=$1;
-        local test_type=$2; # "boolean" or "output"
-        local expected=$3;
-        shift 3;
-        local args=($@);
-        local result;
-        local actual_output;
 
-        echo -n "Test: $fn ${args[@]}... ";
 
-        if [ "$test_type" == "boolean" ]; then
-            if "$fn" "${args[@]}"; then
-                result=true;
-            else
-                result=false;
-            fi
-            if [ "$result" == "$expected" ]; then
-                echo "PASS";
-                passed=$((passed + 1))
-            else
-                echo "FAIL (Expected: $expected, Got: $result)";
-                failed=$((failed + 1));
-            fi
-        elif [ "$test_type" == "output" ]; then
-            actual_output=$("$fn" "${args[@]}");
-            if [ "$actual_output" == "$expected" ]; then
-                echo "PASS";
-                passed=$((passed + 1));
-            else
-                echo "FAIL (Expected: '$expected', Got: '$actual_output')";
-                failed=$((failed + 1));
-            fi
-        else
-            echo "ERROR: Unknown test type: $test_type";
-            failed=$((failed + 1));
-        fi
-    }
-
-}
-
-debug_tests() {
+auto_main(){
     
 
     local passed=0
@@ -251,6 +209,10 @@ debug_tests() {
             fi
         elif [ "$test_type" == "output" ]; then
             actual_output=$("$fn" "${args[@]}")
+            # Canonicalize actual_output if the function is project_base
+            if [ "$fn" == "project_base" ] && [ -n "$actual_output" ]; then
+                actual_output=$(realpath "$actual_output")
+            fi
             if [ "$actual_output" == "$expected" ]; then
                 echo "PASS"
                 passed=$((passed + 1))
@@ -263,6 +225,56 @@ debug_tests() {
             failed=$((failed + 1))
         fi
     }
+
+
+    # --- STRING UTILS ---
+    run_test is_empty boolean true ""
+    run_test is_empty boolean true " "
+    run_test is_empty boolean false "a"
+    run_test is_defined boolean false ""
+    run_test is_defined boolean false " "
+    run_test is_defined boolean true "a"
+    run_test is_super_defined boolean true "a" "b"
+    run_test is_super_defined boolean false "." "b"
+    run_test in_string boolean true "a" "abc"
+    run_test in_string boolean false "d" "abc"
+    run_test strings_are_equal boolean true "a" "a"
+    run_test strings_are_equal boolean false "a" "b"
+    run_test is_num boolean true "123"
+    run_test is_num boolean true ".23"
+    run_test is_num boolean true "1."
+    run_test is_num boolean false "abc"
+    run_test is_alnum boolean true "abc123"
+    run_test is_alnum boolean false "abc!"
+    run_test is_alpha boolean true "abc"
+    run_test is_alpha boolean false "abc1"
+    run_test is_name boolean true "my_var"
+    run_test is_name boolean false "my-var"
+    run_test starts_with boolean true "a" "abc"
+    run_test starts_with boolean false "b" "abc"
+    run_test ends_with boolean true "c" "abc"
+    run_test ends_with boolean false "b" "abc"
+
+    # --- PATH UTILS ---
+    run_test is_path_name boolean true "my/path"
+    run_test is_path_name boolean false "/my/path"
+    run_test is_path boolean true "$TMP_DIR"
+    run_test is_path boolean false "/non/existent/path"
+    run_test is_dir boolean true "$TMP_DIR"
+    run_test is_dir boolean false "$TMP_DIR/file_with_content.txt"
+    run_test is_rw_dir boolean true "$TMP_DIR"
+    run_test is_file boolean true "$TMP_DIR/file_with_content.txt"
+    run_test is_file boolean false "$TMP_DIR"
+    run_test is_rw_file boolean true "$TMP_DIR/file_with_content.txt"
+    run_test is_empty_file boolean true "$TMP_DIR/empty_file.txt"
+    run_test is_empty_file boolean false "$TMP_DIR/file_with_content.txt"
+    run_test is_active_file boolean true "$TMP_DIR/file_with_content.txt"
+    run_test is_active_file boolean false "$TMP_DIR/empty_file.txt"
+    run_test is_executable boolean true "$TMP_DIR/file_with_content.txt"
+    run_test is_executable boolean false "$TMP_DIR/empty_file.txt"
+    run_test a_sub_path_b boolean true "$TMP_DIR/test_dir/sibling_file.txt" "$TMP_DIR"
+    run_test a_file_in_b boolean true "$TMP_DIR/test_dir/sibling_file.txt" "$TMP_DIR/test_dir"
+
 
     local PROJECT_ROOT
     PROJECT_ROOT=$(realpath "$(project_base "$(pwd)")")
@@ -329,8 +341,6 @@ debug_tests() {
 main() {
     if [ "$1" == "auto" ]; then
         auto_main;
-    elif [ "$1" == "debug" ]; then
-        debug_tests;
     else
         stdfx_driver "$@";
     fi
