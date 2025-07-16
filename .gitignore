@@ -10,3 +10,4 @@ GEMINI*
 .bak
 tmp/
 .notes
+*.orig

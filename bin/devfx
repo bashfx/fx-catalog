@@ -20,18 +20,23 @@
 
   # @ top
   
-  SELF_PATH="$0";
+  readonly SELF_PATH="$0";
+  readonly SELF_PID="$$";
 
-  _is_dir(){
-    [ -n "$1" ] && [ -d "$1" ] && return 0;
-    return 1;
-  }
+	# BIN_DIR="$( cd "$(dirname "$0")"   || exit; pwd)"
+	# THIS_DIR="$( cd $BIN_DIR && cd ..  || exit; pwd)"
+	# ROOT_DIR="$( cd $THIS_DIR && cd .. || exit; pwd)"
+
 
 
 #-------------------------------------------------------------------------------
 # Core Includes
 #-------------------------------------------------------------------------------
 
+  _is_dir(){
+    [ -n "$1" ] && [ -d "$1" ] && return 0;
+    return 1;
+  }
 
   if _is_dir "$FX_INC_DIR"; then
     _inc="$FX_INC_DIR";

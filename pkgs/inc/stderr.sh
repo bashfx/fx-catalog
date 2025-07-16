@@ -14,7 +14,7 @@
   LOCAL_LIB_DIR="$(dirname ${BASH_SOURCE[0]})";
   source "${LOCAL_LIB_DIR}/stdopts.sh";
   source "${LOCAL_LIB_DIR}/escape.sh";
-  source "${LOCAL_LIB_DIR}/stdutils.sh";
+
 
   # QUITE_MODE guards set in stdopts.options()
   # DEV_MODE guards set in stdopts.options()
@@ -77,7 +77,7 @@
     [ -n "$text" ] && printf "${prefix}${!color}%b${x}" "${text}" 1>&2 || :
   }
 
-  stderr(){ printf "%b\n" "$@" 1>&2; }
+
   __nl(){ printf "\n" 1>&2; }
   __x(){ printf "${x}" 1>&2; };
 
@@ -117,6 +117,99 @@
   __errbox(){   __printbox "$1" "red" "none"; }
   __devbox(){   __printbox "$1" "red2" "none"; }
   
+
+
+  xline(){ stderr "${blue}${LINE}↯\n${x}"; }
+
+  #todo: refactor to use __log
+  fatal(){ trap - EXIT; __printf "\n$red$fail $1 $2 \n"; exit 1; }
+
+
+  toggle_quiet() {
+    opt_quiet=$((1 - opt_quiet))
+    return "$opt_quiet"
+  }
+
+  toggle_debug() {
+    opt_debug=$((1 - opt_debug))
+    return "$opt_debug"
+  }
+
+  debug_on(){ opt_debug=0; }
+  
+  quiet_off(){ opt_quiet=1; }
+
+  require_dev(){
+    [ "$opt_dev" -eq 0 ] && return 0;
+    return 1;
+  }
+
+  __flag(){ 
+    local flag=${1:-1} lbl=$2 color=;
+    [ $flag -eq 0 ] && icon=$flag_on && color=$green;
+    [ $flag -eq 1 ] && icon=$flag_off && color=$grey2;
+    [ -n "$lbl"   ] && lbl=" ${lbl}"; 
+    printf "%b%s%s%b" "$color" "$icon" "$lbl" $x;
+  } 
+    
+
+  dump(){
+      local len arr i this flag newl
+      arr=("${@}"); len=${#arr[@]}
+      [ $__buf_list -eq 0 ] && flag="\r" &&  newl="$eol" || newl="\n"
+      if [ $len -gt 0 ]; then
+        handle_input
+        for i in ${!arr[@]}; do
+          this="${arr[$i]}"
+          [ -n "$this" ] && printf -v "out" "$flag$opt_dump_col$dots(%02d of %02d) $this $x" "$i" "$len"
+          trace "$out"
+          sleep 0.05
+        done
+        cleanup
+        printf -v "out" "$flag$green$pass (%02d of %02d) Read. $x$eol" "$len" "$len"
+        trace "$out"
+      fi
+    }
+
+#-------------------------------------------------------------------------------
+# Sig / Flow
+#-------------------------------------------------------------------------------
+    
+
+
+  handle_sigint(){ s="$?"; kill 0; exit $s;  }
+  handle_interupt(){ E="$?";  kill 0; exit $E; }
+  handle_stop(){ kill -s SIGSTOP $$; }
+  handle_input(){ [ -t 0 ] && stty -echo -icanon time 0 min 0; }
+  cleanup(){ [ -t 0 ] && stty sane; }
+
+  fin(){
+      local E="$?"; cleanup
+      if [ -z "$opt_quiet" ]; then
+         [ $E -eq 0 ] && __printf "${green}${pass} ${1:-Done}." \
+                      || __printf "$red$fail ${1:-${err:-Cancelled}}."
+      fi
+  }
+
+  trap handle_interupt INT
+  trap handle_stop SIGTSTP
+  trap handle_input CONT
+  trap fin EXIT
+
+  # function   fatal(){ trap - EXIT; __print "\n$fail $1 [$2] \n"; exit 1; }
+  # function   quiet(){ [ -t 1 ] && opt_quiet=${1:-1} || opt_quiet=1; }
+  # function  status(){
+  #   local ret res msg
+  #   ret=$1; res=$2; msg=$3; __print "$res";
+  #   [ $ret -eq 1 ] && fatal "Error: $msg, exiting" "1";
+  #   return 0
+  # }
+
+#-------------------------------------------------------------------------------
+# PROMPTS
+#-------------------------------------------------------------------------------
+    
+
   # Robust confirmation prompt. Reads from the TTY to avoid consuming piped stdin.
   # Respects the --yes flag.
   __confirm() {
@@ -159,62 +252,89 @@
     fi
   }
 
+  prompt_path(){
+      local res ret next
+      prompt="$1"
+      prompt_sure="$2"
+      default="$3"
+      prompt=$(eval echo "$prompt")
+      while [[ -z "$next" ]]; do
+        read -p "$prompt? > ${bld}${green}" __NEXT_DIR
+        res=$(eval echo $__NEXT_DIR)
+        [ -z "$res" ] && res="$default"
+        if [ -n "$res" ]; then
+          if [ "$res" = '?' ]; then
+            echo "cancelled"
+            return 1
+          fi
+          if confirm "${x}${prompt_sure} [ ${blue}$res${x} ] (y/n)"; then
+            if [ ! -d "$res" ]; then
+              error "Couldn't find the directory ($res). Try Again. Or '?' to cancel."
+            else
+              next=1
+            fi
+          fi
+        else
+          warn "Invalid Entry! Try Again."
+        fi
+      done
+      echo "$res"
+    }
 
-  xline(){ stderr "${blue}${LINE}↯\n${x}"; }
 
-  #todo: refactor to use __log
-  fatal(){ trap - EXIT; __printf "\n$red$fail $1 $2 \n"; exit 1; }
-
-
-  toggle_quiet() {
-    opt_quiet=$((1 - opt_quiet))
-    return "$opt_quiet"
+  cprint() {
+    typ=$1
+    case $typ in
+        a) alpha="abcedfghijklmnopqrstuvwxyz";;
+        A) alpha="ABCDEFGHIJKLMNOPQRSTUVWXYZ";;
+        h) alpha='abcdef0123456789';;
+        H) alpha='ABCDEF0123456789';;
+        v) alpha="aeiouy";;
+        c) alpha="bcdfghjklmnpqrstvwxz" ;;
+        V) alpha="AEIOUY" ;;
+        C) alpha="BCDFGHJKLMNPQRSTVWXZ" ;;
+        n) alpha="0123456789" ;;
+        \#|-|_|.) alpha=$1;;
+        *) echo "** Undefined **" ; exit 1 ;;
+    esac
+    len=${#alpha}
+    r=$((RANDOM%len))
+    echo -en ${alpha:r:1}
   }
 
-  toggle_debug() {
-    opt_debug=$((1 - opt_debug))
-    return "$opt_debug"
+  rprint() {
+    code=$1
+    for i in $(seq 1 ${#code})
+    do
+        c=${code:i-1:1}
+        cprint $c
+    done
+    echo
   }
 
-  debug_on(){ opt_debug=0; }
-  
-  quiet_off(){ opt_quiet=1; }
-
-  require_dev(){
-    [ "$opt_dev" -eq 0 ] && return 0;
-    return 1;
+  dump_buffer(){
+    local arr col
+    arr=("${@}"); len=${#arr[@]}
+    col=${1:-$opt_dump_col}
+    if [ $len -gt 0 ]; then
+      for i in ${!arr[@]}; do
+        this="${arr[$i]}"
+        [ -n "$this" ] && printf -v "out" "$opt_dump_col(%d) %s\n$x" "$i" "$this"
+        printf "$out"
+      done
+    fi
   }
 
-  __flag(){ 
-    local flag=${1:-1} lbl=$2 color=;
-    [ $flag -eq 0 ] && icon=$flag_on && color=$green;
-    [ $flag -eq 1 ] && icon=$flag_off && color=$grey2;
-    [ -n "$lbl"   ] && lbl=" ${lbl}"; 
-    printf "%b%s%s%b" "$color" "$icon" "$lbl" $x;
-  } 
-    
+  prompt_buffer(){
+    local res ret next
+    prompt="$1"
+    prompt_lbl="$2"
+    default="$3"
+    arr=("${__buffer[@]}"); len=${#arr[@]}
 
-#-------------------------------------------------------------------------------
-# Sig / Flow
-#-------------------------------------------------------------------------------
-    
-  command_exists(){ type "$1" &> /dev/null; }
-
-  handle_interupt(){ E="$?";  kill 0; exit $E; }
-  handle_stop(){ kill -s SIGSTOP $$; }
-  handle_input(){ [ -t 0 ] && stty -echo -icanon time 0 min 0; }
-  cleanup(){ [ -t 0 ] && stty sane; }
-
-  fin(){
-      local E="$?"; cleanup
-      if [ -z "$opt_quiet" ]; then
-         [ $E -eq 0 ] && __printf "${green}${pass} ${1:-Done}." \
-                      || __printf "$red$fail ${1:-${err:-Cancelled}}."
-      fi
+    while [[ -z "$next" ]]; do
+      read -p "$prompt? > ${bld}${green}" __NEXT_VAL
+      res=$(eval echo $__NEXT_DIR)
+      ## TODO...
+    done
   }
-
-  trap handle_interupt INT
-  trap handle_stop SIGTSTP
-  trap handle_input CONT
-  trap fin EXIT
-

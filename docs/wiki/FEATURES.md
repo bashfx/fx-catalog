@@ -64,12 +64,19 @@ This critical phase ensures the architectural refactoring from Phase I is stable
         
     - **12.3: Initial Driver Implementation:** Create fx_f3_driver and fx_f4_driver to validate the now-complete package deployment and integrity logic.
         
-- ✅ **FEATURE-013: Architectural Refactoring & Integration**
+- 🟡 **FEATURE-013: Architectural Refactoring & Integration**
     
-    - **Description:** Complete the surgical refactoring of devfx to use the new, modular libraries.
+    - **Description:** Complete the surgical refactoring of devfx to use the new, modular libraries. This includes the development of a new, robust options parsing system featuring declarative option definitions, `getopt` integration for argument normalization, a flexible hook system (`_pre_options`, `_post_options`), and efficient bitmasking for boolean flags, ensuring namespaced option variables (e.g., `opt_namespace_flag`). This refactoring aims to replace the monolithic `options()` function in `stdopts.sh` with a modular, extensible architecture.
         
     - **13.1: devfx Integration:** The main setup function within devfx must be updated to orchestrate calls to manifest.sh, integrity.sh, and pkglinker.sh, replacing its old monolithic logic.
-        
+
+- 🟡 **FEATURE-014: Knife Integration & Refactoring**
+    - **Description:** Systematic integration of the `knife` utility across the BashFX codebase to replace ad-hoc `grep`, `sed`, and `awk` commands for file and text manipulation. This aims to improve code readability, maintainability, and leverage `knife`'s specialized functions for tasks like linking, unlinking, variable management, and metadata operations.
+    - **14.1: Core Replacements:** Replace `grep -qF` with `knife linked` in `devfx` and `proflink.sh`.
+    - **14.2: Feature Driver Enhancements:** Replace `grep` checks with `knife has` in feature drivers.
+    - **14.3: RC File Variable Management:** Replace manual variable setting/getting with `knife setv`/`knife getv` in `rcfile.sh`.
+    - **14.4: Metadata Operations:** Replace `sed` for metadata management with `knife metaset`/`metaget`/`metadel`.
+    - **14.5: Visual Element Extraction:** Replace `sed` for logo/banner extraction with `knife blockr`/`knife logo`.
 
 ---
 
@@ -128,6 +135,6 @@ This phase evolves fx into a powerful developer assistant for creating new Bas
     
     - **Description:** Implement a command to validate script metadata and optionally run shellcheck if it is installed.
         
-- ⚪ **FEATURE-011: Metadata Management Tool (fx dev meta)**
+- 🟡 **FEATURE-011: Metadata Management Tool (fx dev meta)**
     
-    - **Description:** Implement a command to programmatically get and set values in a script's metadata block.
+    - **Description:** Implement a command to programmatically get and set values in a script's metadata block, leveraging `knife metaget`, `knife metaset`, and `knife metadel` for robust and standardized metadata manipulation.

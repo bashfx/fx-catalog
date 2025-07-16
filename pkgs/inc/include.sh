@@ -26,7 +26,7 @@
 #-------------------------------------------------------------------------------
 
 
-  BASH_MAJOR=${BASH_VERSINFO[0]};
+
 
 
   red=$'\x1B[31m';
@@ -45,17 +45,23 @@
 
 
 #-------------------------------------------------------------------------------
-# Experiments
+# Micro Utilities
 #-------------------------------------------------------------------------------
 
-
-  func_stats(){
+  ls_funcs(){
     local this_file="${BASH_SOURCE[0]}"
     grep -E '^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(\)[[:space:]]*\{' "$this_file" \
       | grep -vE '^[[:space:]]*(#|source|\.)' \
-      | wc -l
+      | sort -u;
   }
 
+  func_stats(){
+    ls_funcs | wc -l
+  }
+
+#-------------------------------------------------------------------------------
+# Experiments
+#-------------------------------------------------------------------------------
 
   # returns any available include directory - prioritizes user over init
   fx_smart_inc(){
@@ -135,15 +141,20 @@
 
 
   # try to load stderr from user installed path
+
+
   if [ -d "$FX_INC_DIR" ]; then
-    source "$FX_INC_DIR/stderr.sh";
+    __INC_BASE="$FX_INC_DIR"
   else
     # fallback on the neighborly version
-    LOCAL_LIB_DIR="$(dirname ${BASH_SOURCE[0]})";
-    source "${LOCAL_LIB_DIR}/stderr.sh";
+    __INC_BASE="$(dirname ${BASH_SOURCE[0]})";
   fi
 
+  source "$__INC_BASE/base.sh";
+
+
   if ! declare -F stderr > /dev/null; then
-    echo "[INC] Error loading stderr.sh dependency";
+    echo "[INC] Error loading base dependency.";
     exit 1;
   fi
+

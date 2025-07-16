@@ -13,12 +13,6 @@
 # Utils
 #-------------------------------------------------------------------------------
 
-  #command for testing options and setup
-  noop(){ 
-    [ -n "$1" ] && trace "Noop: [$1]";
-    return 0; 
-  }
-
   #update to take prefix as a paramter isntead of do_
   do_inspect(){
     declare -F | grep 'do_' | awk '{print $3}'
@@ -29,8 +23,26 @@
     done <<< "$_content"
   }
 
-  function_exists(){
-    [ -n "$1" ] && declare -F "$1" >/dev/null
+
+  # Removes leading and trailing whitespace from a string and prints the result.
+  trim_string() {
+      local var="$*"
+      # Remove leading whitespace characters
+      var="${var#"${var%%[![:space:]]*}"}"
+      # Remove trailing whitespace characters
+      var="${var%"${var##*[![:space:]]}"}"
+      printf '%s' "$var"
+  }
+
+  # Returns 0 (true) if the first argument is present in the rest of the arguments (the array).
+  # Usage: is_in_array "element" "${my_array[@]}"
+  in_array() {
+      local element="$1" item
+      shift
+      for item in "$@"; do
+          [[ "$item" == "$element" ]] && return 0
+      done
+      return 1
   }
 
 
@@ -47,6 +59,30 @@
     return 0;
   }
 
+  index_of(){
+    local elem args i j list; elem=$1; shift; list=("${@}")
+    i=-1;
+    for ((j=0;j<${#list[@]};j++)); do
+      [ "${list[$j]}" = "$elem" ] && { i=$j; break; }
+    done;
+    echo $i;
+    [[ "$i" == "-1" ]] && return 1 || return 0
+  }
+
+  #ex  list2="$(join_by \| ${list[@]})"
+  join_by(){
+    local IFS="$1"; shift;
+    echo "$*";
+  }
+
+  split_by(){
+    local this on;
+    this="$1";
+    on="$2";
+    array=(${this//$on/ })
+    echo "${array[@]}"
+  }
+
   has_subdirs(){
     local dir="$1"
     for d in "$dir"/*; do
@@ -55,8 +91,123 @@
     return 1
   }
 
+  # @note uses portable find
+  sub_dirs(){
+    local path=$1
+    res=($($cmd_find "$path" -type d -printf '%P\n' ))
+    echo "${res[*]}"
+  }
 
 
+  pop_array(){
+    local match="$1"; shift
+    local temp=()
+    local array=($@)
+    for val in "${array[@]}"; do
+        [[ ! "$val" =~ "$match" ]] && temp+=($val)
+    done
+    array=("${temp[@]}")
+    unset temp
+    echo "${array[*]}"
+  }
+
+   requote(){
+    whitespace="[[:space:]]"
+    for i in "$@"; do
+      if [[ $i =~ $whitespace ]]; then
+        i=\"$i\"
+      fi
+      echo "$i"
+    done
+  }
+
+   argsify(){
+    local IFS ret key arg var prev
+    prev="$IFS"; IFS='|'
+    args=$(auto_escape "$*"); ret=$?
+
+    case "${@}" in
+      *\ * ) ret=0;;
+      * ) arg="$1";;
+    esac
+
+    [ $ret -eq 0 ] && arg="'$*'" && trace "Args needs special love <3"
+
+    trace "ARG is $arg"
+
+    IFS=$prev
+    echo "$arg"
+  }
+
+   auto_escape(){
+    local str="$1"
+    printf -v q_str '%q' "$str"
+    if [[ "$str" != "$q_str" ]]; then
+      ret=0
+    else
+      ret=1
+    fi
+    echo "$q_str"
+    return $ret
+  }
+
+
+
+  # Compares two semantic version strings.
+  # Usage: compare_versions "1.2.3" ">=" "1.2.0"
+  # Handles standard operators: =, ==, !=, <, <=, >, >=
+  compare_versions() {
+      # Easy case: versions are identical
+      if [[ "$1" == "$3" ]]; then
+          case "$2" in
+              '='|'=='|'>='|'<=') return 0 ;;
+              *) return 1 ;;
+          esac
+      fi
+
+      # Split versions into arrays using '.' as a delimiter
+      local OLD_IFS="$IFS"
+      IFS='.'
+      local -a v1=($1) v2=($3)
+      IFS="$OLD_IFS"
+
+      # Find the longest version array to iterate through
+      local i
+      local len1=${#v1[@]}
+      local len2=${#v2[@]}
+      local max_len=$(( len1 > len2 ? len1 : len2 ))
+
+      # Compare each component numerically
+      for ((i = 0; i < max_len; i++)); do
+          # Pad missing components with 0
+          local c1=${v1[i]:-0}
+          local c2=${v2[i]:-0}
+
+          if (( c1 > c2 )); then
+              case "$2" in '>'|'>='|'!=') return 0 ;; *) return 1 ;; esac
+          fi
+          if (( c1 < c2 )); then
+              case "$2" in '<'|'<='|'!=') return 0 ;; *) return 1 ;; esac
+          fi
+      done
+
+      # If we get here, they are equal component-by-component
+      case "$2" in '='|'=='|'>='|'<=') return 0 ;; *) return 1 ;; esac
+  }
+
+
+  find_repos(){
+    think "Finding repo folders..."
+    warn "This may take a few seconds..."
+    this="$cmd_find ${2:-.} -mindepth 1"
+    [[ $1 =~ "1" ]] && this+=" -maxdepth 2" || :
+    [[ $1 =~ git ]] && this+=" -name .git"  || :
+    this+=" -type d ! -path ."
+    awk_cmd="awk -F'.git' '{ sub (\"^./\", \"\", \$1); print \$1 }'"
+    cmd="$this | $awk_cmd"
+    __print "$cmd"
+    eval "$cmd" #TODO:check if theres a better way to do this
+  }
 
 # =================== startup flag =================================
-[ -n "$DEBUG_MODE" ] && echo "[INC] stdutils.sh added $(func_stats) functions" >&2;
+#[ -n "$DEBUG_MODE" ] && echo "[INC] stdutils.sh added $(func_stats) functions" >&2;

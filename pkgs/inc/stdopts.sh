@@ -32,6 +32,28 @@
 # 
 #-------------------------------------------------------------------------------
 
+#-------------------------------------------------------------------------------
+# Option Hooks
+#-------------------------------------------------------------------------------
+
+  _fx_run_options_hook() {
+    local pattern="$1"
+    shift
+    local hook_funcs
+    
+    # Find all functions matching the pattern, then sort them.
+    # The `sed` command extracts just the function name.
+    hook_funcs=$(declare -F | sed -n "s/^declare -f //p" | grep "${pattern}$" | sort)
+    
+    for func in $hook_funcs; do
+      if function_exists "$func"; then
+        trace "[HOOK] Running ${pattern} hook: $func"
+        "$func" "$@" # Pass along the original script arguments
+      fi
+    done
+  }
+
+
 # @lbl options
 
   global_options(){
@@ -81,8 +103,10 @@
 
 
   options(){
+    _fx_run_options_hook "_pre_options" "$@"
     global_options "${@}";
     local_options "${@}";
+    _fx_run_options_hook "_post_options" "$@"
   }
 
 # =================== startup flag =================================
