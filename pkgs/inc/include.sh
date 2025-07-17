@@ -1,63 +1,21 @@
 #!/usr/bin/env bash
-#===============================================================================
-  
-  # rc are configuration files that create state via variables and
-  # define paths required loading and execution. its essentially the glue
-  # includes only work if the base and include path are defined by an 
-  # available rc file, either the init (source) one or the user (installed) one.
+
 
 #-------------------------------------------------------------------------------
-
-  # note: vars like > this ret res err, are common patterns
-
-  # note: Since stderr.sh's print and log utilities are low level fundamental
-  #       and used by everything, we will include it here automatically
-  #       so that any script loading include.sh will get it by default.
-  #       If a script doesnt need include.sh it will have to source stderr.sj
-  #       directly.
-  #       
+# Library Identity
+#-------------------------------------------------------------------------------
+  readonly LIB_INCLUDE="${BASH_SOURCE[0]}";
+  _index=
 
 #-------------------------------------------------------------------------------
-
-  echo "loaded include.sh" >&2;
-
-#-------------------------------------------------------------------------------
-# Basic Stderr Helpers overridden later by stderr.sh
+# Load Guard
 #-------------------------------------------------------------------------------
 
 
 
+if ! _index=$(is_lib_registered "LIB_INCLUDE"); then 
 
-
-  red=$'\x1B[31m';
-  orange=$'\x1B[38;5;214m';
-  green=$'\x1B[32m';
-  blue=$'\x1B[36m';
-  xx=$'\x1B[0m';     # Alias for reset
-
-  # note: these mini stderr functions dont respect quiet or verbose flags
-  # you will need global level QUIET_MODE to shut these ones up
-  stderr(){ [ -z "$QUIET_MODE" ] &&  printf "%b\n" "$@" 1>&2; }
-  error(){ stderr "${red}" "$1" "${xx}"; }
-  warn(){ stderr "${orange}" "$1" "${xx}"; }
-  okay(){ stderr "${green}" "$1" "${xx}"; }
-  info(){ stderr "${blue}" "$1" "${xx}"; }
-
-
-#-------------------------------------------------------------------------------
-# Micro Utilities
-#-------------------------------------------------------------------------------
-
-  ls_funcs(){
-    local this_file="${BASH_SOURCE[0]}"
-    grep -E '^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(\)[[:space:]]*\{' "$this_file" \
-      | grep -vE '^[[:space:]]*(#|source|\.)' \
-      | sort -u;
-  }
-
-  func_stats(){
-    ls_funcs | wc -l
-  }
+  register_lib LIB_INCLUDE;
 
 #-------------------------------------------------------------------------------
 # Experiments
@@ -136,25 +94,15 @@
     return 1;
   }
 
-# =================== startup flag =================================
-# [ -n "$DEBUG_MODE" ] && echo "[INC] include.sh added $(func_stats) functions" >&2;
 
 
-  # try to load stderr from user installed path
+#-------------------------------------------------------------------------------
+# Load Guard Error
+#-------------------------------------------------------------------------------
 
+else
 
-  if [ -d "$FX_INC_DIR" ]; then
-    __INC_BASE="$FX_INC_DIR"
-  else
-    # fallback on the neighborly version
-    __INC_BASE="$(dirname ${BASH_SOURCE[0]})";
-  fi
+  error "Library LIB_INCLUDE found at index [$_index]";
+  exit 1;
 
-  source "$__INC_BASE/base.sh";
-
-
-  if ! declare -F stderr > /dev/null; then
-    echo "[INC] Error loading base dependency.";
-    exit 1;
-  fi
-
+fi

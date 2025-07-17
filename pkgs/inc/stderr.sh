@@ -9,9 +9,20 @@
 #-----------------------------><-----------------------------#
 #=====================================code!=====================================
   
-  echo "loaded stderr.sh" >&2;
-  
-  LOCAL_LIB_DIR="$(dirname ${BASH_SOURCE[0]})";
+
+  readonly LIB_STDERR="${BASH_SOURCE[0]}";
+  _index=
+
+#-------------------------------------------------------------------------------
+# Load Guard
+#-------------------------------------------------------------------------------
+
+if ! _index=$(is_lib_registered "LIB_STDERR"); then 
+
+  register_lib LIB_STDERR;
+
+
+  readonly LOCAL_LIB_DIR="$(dirname ${LIB_STDERR})";
   source "${LOCAL_LIB_DIR}/stdopts.sh";
   source "${LOCAL_LIB_DIR}/escape.sh";
 
@@ -342,3 +353,14 @@
       ## TODO...
     done
   }
+
+#-------------------------------------------------------------------------------
+# Load Guard Error
+#-------------------------------------------------------------------------------
+
+else
+
+  error "Library LIB_STDERR found at index [$_index]";
+  exit 1;
+
+fi

@@ -11,7 +11,18 @@
 # 
 #-------------------------------------------------------------------------------
 
-  echo "loaded stdopts.sh" >&2;
+  readonly LIB_STDOPTS="${BASH_SOURCE[0]}";
+  _index=
+
+#-------------------------------------------------------------------------------
+# Load Guard
+#-------------------------------------------------------------------------------
+
+if ! _index=$(is_lib_registered "LIB_STDOPTS"); then 
+
+  register_lib LIB_STDOPTS;
+
+
 
 #-------------------------------------------------------------------------------
 # Utils
@@ -112,5 +123,13 @@
     # echo "${@}";    echo "trying options ($opt_debug) ($opt_trace) ($opt_silly) ($opt_yes)";
   }
 
-# =================== startup flag =================================
-#[ -n "$DEBUG_MODE" ] && echo "[INC] stdopts.sh added $(func_stats) functions" >&2;
+#-------------------------------------------------------------------------------
+# Load Guard Error
+#-------------------------------------------------------------------------------
+
+else
+
+  error "Library LIB_STDOPTS found at index [$_index]";
+  exit 1;
+
+fi

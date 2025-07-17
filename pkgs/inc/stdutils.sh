@@ -7,7 +7,20 @@
 #-------------------------------------------------------------------------------
 #=====================================code!=====================================
 
-  echo "loaded stdutils.sh" >&2;
+  readonly LIB_STDUTILS="${BASH_SOURCE[0]}";
+
+
+  _index=
+
+#-------------------------------------------------------------------------------
+# Load Guard
+#-------------------------------------------------------------------------------
+
+if ! _index=$(is_lib_registered "LIB_STDUTILS"); then 
+
+  register_lib LIB_STDUTILS;
+
+
 
 #-------------------------------------------------------------------------------
 # Utils
@@ -26,26 +39,16 @@
 
   # Removes leading and trailing whitespace from a string and prints the result.
   trim_string() {
-      local var="$*"
-      # Remove leading whitespace characters
-      var="${var#"${var%%[![:space:]]*}"}"
-      # Remove trailing whitespace characters
-      var="${var%"${var##*[![:space:]]}"}"
-      printf '%s' "$var"
+    local var="$*"
+    # Remove leading whitespace characters
+    var="${var#"${var%%[![:space:]]*}"}"
+    # Remove trailing whitespace characters
+    var="${var%"${var##*[![:space:]]}"}"
+    printf '%s' "$var"
   }
 
-  # Returns 0 (true) if the first argument is present in the rest of the arguments (the array).
-  # Usage: is_in_array "element" "${my_array[@]}"
-  in_array() {
-      local element="$1" item
-      shift
-      for item in "$@"; do
-          [[ "$item" == "$element" ]] && return 0
-      done
-      return 1
-  }
-
-
+  # in_array moved to base.sh
+  
   is_empty_file(){
     local this=$1;
     trace "Checking for empty file ($this)";
@@ -59,15 +62,6 @@
     return 0;
   }
 
-  index_of(){
-    local elem args i j list; elem=$1; shift; list=("${@}")
-    i=-1;
-    for ((j=0;j<${#list[@]};j++)); do
-      [ "${list[$j]}" = "$elem" ] && { i=$j; break; }
-    done;
-    echo $i;
-    [[ "$i" == "-1" ]] && return 1 || return 0
-  }
 
   #ex  list2="$(join_by \| ${list[@]})"
   join_by(){
@@ -209,5 +203,14 @@
     eval "$cmd" #TODO:check if theres a better way to do this
   }
 
-# =================== startup flag =================================
-#[ -n "$DEBUG_MODE" ] && echo "[INC] stdutils.sh added $(func_stats) functions" >&2;
+
+#-------------------------------------------------------------------------------
+# Load Guard Error
+#-------------------------------------------------------------------------------
+
+else
+
+  error "Library LIB_STDUTILS found at index [$_index]";
+  exit 1;
+
+fi
