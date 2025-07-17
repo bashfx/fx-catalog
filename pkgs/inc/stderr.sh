@@ -43,7 +43,7 @@
   __log() {
     local type=$1 text=$2 force=$3 stream=2;
     case "$type" in
-      qa)    [[ -n "$TEST_MODE" ]]                  && __printx "$text\n" "grey"   "$darr "   $stream ;;
+      (qa)    [[ -n "$TEST_MODE" ]]                  && __printx "$text\n" "grey"   "$darr "   $stream ;;
       dev)   [[ $opt_dev -eq 0 ]]                   && __printx "$text\n" "red2"   "$boto "   $stream ;;
       warn)  [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "orange" "$delta "  $stream ;;
       okay)  [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "green"  "$pass "   $stream ;;
@@ -52,13 +52,14 @@
       silly) [[ $force -eq 0 || $opt_silly -eq 0 ]] && __printx "$text\n" "purple" "$idots "  $stream ;;
       recover) [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "purple2" "$recv "  $stream ;;
       think) [[ $opt_trace -eq 0 ]]                 && __printx "$text\n" "white2"   "$idots "  $stream ;;
-      trace) [[ $opt_trace -eq 0 ]]                 && __printx "$text\n" "grey"   "$darr "  $stream ;;
+      trace) [[ $opt_trace -eq 0 ]]                 && __printx "$text\n" "grey2"   "$darr "  $stream ;;
       error)                                           __printx "$text\n" "red"   "$fail "   $stream ;;
+      uclock) [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "cyan"   "$uhour "   $stream ;;
     esac
   }
 
   recover()  { __log recover  "$1" "${2:-1}"; }
-  warn()    { __log warn  "$1" "${2:-1}"; }
+  warn()  { __log warn  "$1" "${2:-1}"; }
   okay()  { __log okay  "$1" "${2:-1}"; }
   info()  { __log info  "$1" "${2:-1}"; }
   note()  { __log note  "$1" "${2:-1}"; }
@@ -66,6 +67,8 @@
   trace() { __log trace "$1"; }
   think() { __log think "$1"; }
   error() { __log error "$1"; }
+  uclock(){ __log uclock "$1"; }
+
   log_dev()   { __log dev "$1"; }
   log_test()  { __log qa "$1"; }
   
@@ -112,6 +115,7 @@
     fi
   }
 
+  __box(){ __printbox "$1" "white" "none"; }
   __boltbox(){ __printbox "$1" "blue" "bolt"; }
   __docbox(){   __printbox "$1" "purple" "lambda"; }
   __errbox(){   __printbox "$1" "red" "none"; }

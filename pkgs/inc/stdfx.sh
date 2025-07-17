@@ -357,7 +357,11 @@
   in_tree(){
     local dir="$1" file="$2" 
     if is_path "$dir"; then
-      find "$dir" -name "$file" -print -quit;
+      if [[ "$file" == */* ]]; then
+        find "$dir" -wholename "$dir/$file" -print -quit;
+      else
+        find "$dir" -name "$file" -print -quit;
+      fi
     fi
   }
 

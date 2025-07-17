@@ -102,6 +102,12 @@
   spindle=$'\u27D0'  # ⟐ circled dash / orbital
   anote=$'\u260D'
   
+  uclock=$'\u23F1'    # ⏱
+  uclock2=$'\u23F2'   # ⏲
+  uhour=$'\u29D6'     # ⧖ 
+  udate=$'\u1F5D3'    # 🗓
+
+
 
   LINE="$(printf '%.0s-' {1..54})";
   LINE2="$(printf '%.0s-' {1..80})";

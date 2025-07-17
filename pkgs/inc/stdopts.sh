@@ -68,6 +68,7 @@
 
     # Process arguments in a single loop for clarity and efficiency.
     for arg in "$@"; do
+      echo "testing option arg $arg"
       case "$arg" in
         --yes|-y)           opt_yes=0;;
         --flag*|-F)         opt_flags=0;;
@@ -103,10 +104,12 @@
 
 
   options(){
-    _fx_run_options_hook "_pre_options" "$@"
+
+    _fx_run_options_hook "_pre_options" "$@";
     global_options "${@}";
     local_options "${@}";
-    _fx_run_options_hook "_post_options" "$@"
+    _fx_run_options_hook "_post_options" "$@";
+    # echo "${@}";    echo "trying options ($opt_debug) ($opt_trace) ($opt_silly) ($opt_yes)";
   }
 
 # =================== startup flag =================================
