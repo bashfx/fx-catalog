@@ -225,63 +225,62 @@ EOF
 
 
   init_fx(){
-    local app;
-    if [ -z "$FX_RC" ]; then 
+    if [ -z "$FX_RC" ]; then
       info "[VAR] FX vars loading from init ...";
       export FX_APP_NAME='fx';
-      app="$FX_APP_NAME";
 
+      # Use the xdg_path function to ensure all paths are compliant.
+      export FX_BIN="${FX_BIN:-$(xdg_path bin)/$FX_APP_NAME}";
+      export FX_ETC="${FX_ETC:-$(xdg_path etc)/$FX_APP_NAME}";
+      export FX_DATA="${FX_DATA:-$(xdg_path data)/$FX_APP_NAME}";
+      export FX_STATE="${FX_STATE:-$(xdg_path state)/$FX_APP_NAME}";
+      export FX_LIB="${FX_LIB:-$(xdg_path lib)/$FX_APP_NAME}";
 
-
-      export FX_BIN="${FX_BIN:-$XDG_FX_BIN/$app}";
-
-      export FX_ETC="${FX_ETC:-$XDG_FX_CONFIG/$app/etc}";
-      export FX_DATA="${FX_DATA:-$XDG_FX_SHARE/$app}";
-      export FX_STATE="${FX_STATE:-$XDG_FX_STATE/$app}";
-      export FX_RC="${FX_RC:-${FX_ETC}/fx.rc}";
-
-      export FX_LIB="${FX_LIB:-$XDG_FX_LIB/$app}";
+      # These are derived from the primary paths.
       export FX_INC="${FX_INC:-$FX_LIB/inc}";
-      export FX_APP="${FX_LIB}/pkgs/fx"; #location of existing "apps"
+      export FX_APP="${FX_APP:-$FX_LIB/pkgs/fx}"; #location of existing "apps"
+      export FX_RC="${FX_RC:-$FX_ETC/fx.rc}";
 
-      export FX_PROFILE=${FX_PROFILE:-$(canonical_profile)}; #allow a prev set
+      # Allow a previously set profile, but default to the canonical one.
+      export FX_PROFILE=${FX_PROFILE:-$(canonical_profile)};
     fi
   }
 
 
   ensure_fx_ready() {
     trace "[DIR] checking application directories...";
-    local this var;
+    local this var ret=0;
 
     for var in "${fx_var_list[@]}"; do
-
-      this=$(deref_var "$var") #bash 3.2
-       
-      # Skip empty values
-      [ -z "${this}" ] && {
-        error "$var is unset or empty!" >&2;
-        return 1;
-      }
-
-      # Check if it's a directory, or try to create it
-      #'^FX_INIT_|^FX_RC|^FX_APP'
+      # These are not directories, so skip them.
       case "$var" in
-        (FX_RC|FX_APP_NAME) continue ;;  # skip these vars
+        (FX_RC|FX_APP_NAME) continue ;;
       esac
 
-      
-      if [ -d "$this" ]; then
+      this=$(deref_var "$var")
+
+      # Use a more robust check from stdfx.sh to ensure the variable is set to a valid value.
+      if ! is_super_defined "$this"; then
+        error "$var is not defined or has an invalid value!" >&2;
+        ret=1;
+        continue; # Skip to the next var
+      fi
+
+      # Use is_dir from stdfx.sh for the check.
+      if is_dir "$this"; then
         trace "[DIR] $var → $this exists"
       else
         trace "[DIR] $var → $this does not exist, attempting to create..."
-        mkdir -p "$this" || {
-          err="Failed to create $this for $var" >&2
-          return 1;
-        }
-        okay "Created $this for $var"
+        if mkdir -p "$this"; then
+           okay "Created $this for $var"
+        else
+          # Capture the error message directly.
+          error "Failed to create $this for $var" >&2
+          ret=1
+        fi
       fi
-    done #end for
-    return 0;
+    done
+    return $ret;
   }
 
 
@@ -716,7 +715,7 @@ EOF
 
   dispatch(){
     local call="$1" arg="$2"  cmd='' ret;
-
+    warn "$1 $2 $3"
     case $call in
       (prof)        cmd='dev_dump_profile';; # Note: dev_dump_profile is not defined in this script
       (docs)        cmd='fx_print_embed';;
@@ -776,11 +775,11 @@ EOF
     :
   else
 
-
+    # options is called by boot now
 
     # Filter out flags to get positional arguments for main().
     args=()
-    for arg in "${orig_args[@]}"; do
+    for arg in "${SELF_ARGS[@]}"; do
       [[ "$arg" == -* ]] && continue
       args+=("$arg")
     done
