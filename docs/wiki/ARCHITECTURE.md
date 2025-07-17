@@ -59,13 +59,15 @@ This section covers the low-level "grammar" of a BashFX script: how things are n
         
     - **Standard Prefixes:**
 
+        - `T_`: temporary. Variable has a local(1) or a local(2) scope. Meant to be ephemeral. 
+
+        - `T_this/THIS_/this_`: For the "Thisness" context pattern. (implied ephemeral)
+
         - `fxi_/FXI_`: For the setup/installer context.
             
         - `fx_/FX_`: For the user runtime context.
             
         - `opt_`: For argument flag states.
-            
-        - `THIS_/this_`: For the "Thisness" context pattern.
             
         - `dev_`: For internal/testing/destructive functions.
             

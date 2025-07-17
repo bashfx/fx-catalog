@@ -18,7 +18,6 @@ source "$SELF_PATH/../pkgs/inc/base.sh";
   }
 
 
-
   test_setup(){
     # Test setup
     TMP_DIR="../tmp/stdfx_test";
@@ -187,9 +186,6 @@ source "$SELF_PATH/../pkgs/inc/base.sh";
           ;;
       esac
   }
-
-
-
 
   auto_main(){
       
@@ -388,7 +384,7 @@ source "$SELF_PATH/../pkgs/inc/base.sh";
     :
   else
     orig_args=("${@}")
-    options "${orig_args[@]}";
+    _options "${orig_args[@]}";
     args=()
     for arg in "${orig_args[@]}"; do
       [[ "$arg" == -* ]] && continue

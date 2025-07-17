@@ -19,18 +19,16 @@
 #=====================================code!=====================================
 
   # @ top
+  SELF="APP_DEVFX";
+  SELF_ARGS=("${@}");
   
+  readonly APP_DEVFX="${BASH_SOURCE[0]}";
+
   readonly SELF_PATH="$0";
   readonly SELF_PID="$$";
 
-	# BIN_DIR="$( cd "$(dirname "$0")"   || exit; pwd)"
-	# THIS_DIR="$( cd $BIN_DIR && cd ..  || exit; pwd)"
-	# ROOT_DIR="$( cd $THIS_DIR && cd .. || exit; pwd)"
-
-
-
 #-------------------------------------------------------------------------------
-# Core Includes
+#  Bootstrap
 #-------------------------------------------------------------------------------
 
   _is_dir(){
@@ -53,16 +51,33 @@
 # Core Includes
 #-------------------------------------------------------------------------------
 
+
+
   source "$_inc/base.sh"; 
 
-  # if _is_dir "$_app/knife"; then
-  #   _knife="$_app/knife/knife.sh";
-  # else 
-  #   printf "[ENV] Cant locate [kinfe]. Fatal.\n";
-  #   exit 1;
-  # fi
-  # unset _app _inc;
-  # $_knife;
+  if is_base_ready; then
+    fx_smart_source stdfx    || exit 1;
+    fx_smart_source stdutils || exit 1;
+    fx_smart_source stderr   || exit 1;
+    dump_lib
+  else
+    error "Problem loading core libaries";
+    exit 1;
+  fi
+  
+
+
+
+  boot "APP_DEVFX" "SELF"; #"${SELF_ARGS[@]}";
+  #_depends( MD5 FIND GREP AWK DATE SED COLUMN );
+
+  dump_lib
+
+  using_app "knife" 1>&2;
+
+  info "KNIFE appears out of thin air! ~~~ ($KNIFE)";
+  #$KNIFE;
+
 
 #-------------------------------------------------------------------------------
 # Core Includes
@@ -110,7 +125,6 @@
   fx_smart_source integrity  || exit 1
   fx_smart_source pkglinker  || exit 1
 
-  KNIFE="$(map_core_app knife)";
 
 #-------------------------------------------------------------------------------
 # Templates
@@ -739,7 +753,7 @@ EOF
     local str ret=1;
 
     #using knife source is determined top of file
-    str=$($_knife logo "$SELF_PATH" 3 12); ret=$?;
+    str=$($KNIFE logo "$SELF_PATH" 3 12); ret=$?;
     info "$str";
 
     [ $opt_flags -eq 0 ] && { stat_check "${orig_args[@]}"; } # show status printout
@@ -762,9 +776,6 @@ EOF
     :
   else
 
-
-    orig_args=("${@}")
-    options "${orig_args[@]}";
 
 
     # Filter out flags to get positional arguments for main().

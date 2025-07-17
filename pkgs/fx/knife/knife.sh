@@ -17,8 +17,12 @@
 #=====================================code!=====================================
 # Dev Note: This is an early alpha version and will need to refactored later.
   
-  readonly KINFE_PATH="${BASH_SOURCE[0]}";
+  # @ top
+  SELF="APP_KNIFE";
+  SELF_ARGS=("${@}");
   SELF_PATH="$0";
+  readonly KINFE_PATH="${BASH_SOURCE[0]}";
+
 
 #-------------------------------------------------------------------------------
 # Boot
@@ -49,14 +53,13 @@
   if is_base_ready; then
     fx_smart_source stdfx    || exit 1;
     fx_smart_source stdutils || exit 1;
-    fx_smart_source stdfx    || exit 1;
     fx_smart_source stderr   || exit 1;
   else
     error "Problem loading core libaries";
     exit 1;
   fi
 
-  _using( MD5 FIND GREP AWK DATE SED COLUMN );
+  #_using( MD5 FIND GREP AWK DATE SED COLUMN );
 #-------------------------------------------------------------------------------
 # State Vars
 #-------------------------------------------------------------------------------
@@ -1315,7 +1318,7 @@ knife_inject() {
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 
   orig_args=("${@}")
-  options "${orig_args[@]}"; # global options
+  _options "${orig_args[@]}"; # global options
 
   # Filter out flags to get positional arguments for main().
   args=()

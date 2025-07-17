@@ -27,21 +27,25 @@ if ! _index=$(is_lib_registered "LIB_PORTABLE"); then
   # ? basename file type which printf? read dirname cp mv chmod compgen unset unalias
   # sleep kill declare
 
-  _known=( sed grep awk md5 realpath readlink /
-          find date column wc head tail cat  /
-          tree git tput fswatch rsync
+  _known=( sed grep awk md5 realpath readlink
+          find date column wc head tail cat  
+          tree git tput fswatch rsync sort tr
 
-        );
+         );
 
   cmd_wrapper() {
-    local cmd_name="$1"
-    local global_var_name="$2"
-    local cmd_path=""
+    local T_name="$1"
+    local T_global="$2"
+    local T_path=""
 
-    if command -v "$cmd_name" >/dev/null 2>&1; then
-      cmd_path=$(command -v "$cmd_name")
+    if command -v "$T_name" >/dev/null 2>&1; then
+      T_path=$(command -v "$T_name")
     fi
-    eval "$global_var_name=\"$cmd_path\"" # Set the global variable
+    eval "$T_global=\"$T_path\"" # Set the global variable
+  }
+
+  depends_on(){
+    noimp;
   }
 
   check_type(){ noimp; }
@@ -55,8 +59,8 @@ if ! _index=$(is_lib_registered "LIB_PORTABLE"); then
 #-------------------------------------------------------------------------------
 
 else
-
-  error "Library LIB_PORTABLE found at index [$_index]";
+  dump_libs;
+  error "Library LIB_PORTABLE already loaded [$_index]";
   exit 1;
 
 fi

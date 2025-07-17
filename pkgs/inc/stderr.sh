@@ -21,11 +21,8 @@ if ! _index=$(is_lib_registered "LIB_STDERR"); then
 
   register_lib LIB_STDERR;
 
-
   readonly LOCAL_LIB_DIR="$(dirname ${LIB_STDERR})";
   source "${LOCAL_LIB_DIR}/escape.sh";
-  source "${LOCAL_LIB_DIR}/stdopts.sh";
-
 
 
   # QUITE_MODE guards set in stdopts.options()
@@ -36,7 +33,7 @@ if ! _index=$(is_lib_registered "LIB_STDERR"); then
 # Printers
 #-------------------------------------------------------------------------------
 
-# @note : logo function moved to knife, sans color and quiet
+  # @note : logo function moved to knife, sans color and quiet
   __logo(){
     local src=$1 r1=${2:-3} r2=${3:-9};
     if [ -z "$opt_quiet" ] || [ $opt_quiet -eq 1 ]; then
@@ -62,24 +59,27 @@ if ! _index=$(is_lib_registered "LIB_STDERR"); then
       info)  [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "blue"   "$lambda " $stream ;;
       note)  [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "grey"   "$colon2 " $stream ;;
       silly) [[ $force -eq 0 || $opt_silly -eq 0 ]] && __printx "$text\n" "purple" "$idots "  $stream ;;
-      recover) [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "purple2" "$recv "  $stream ;;
+
+      recov) [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "purple2" "$recv "  $stream ;;
       think) [[ $opt_trace -eq 0 ]]                 && __printx "$text\n" "white2"   "$idots "  $stream ;;
       trace) [[ $opt_trace -eq 0 ]]                 && __printx "$text\n" "grey2"   "$darr "  $stream ;;
+      magic) [[ $force -eq 0 || $opt_trace -eq 0 ]] && __printx "$text\n" "purple" "$spark "  $stream ;;
       error)                                           __printx "$text\n" "red"   "$fail "   $stream ;;
       uclock) [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "cyan"   "$uhour "   $stream ;;
     esac
   }
 
-  recover()  { __log recover  "$1" "${2:-1}"; }
+  recover() { __log recov  "$1" "${2:-1}"; }
   warn()  { __log warn  "$1" "${2:-1}"; }
   okay()  { __log okay  "$1" "${2:-1}"; }
   info()  { __log info  "$1" "${2:-1}"; }
   note()  { __log note  "$1" "${2:-1}"; }
   silly() { __log silly "$1" "${2:-1}"; }
+  magic() { __log magic "$1" "${2:-1}"; } # new
   trace() { __log trace "$1"; }
   think() { __log think "$1"; }
   error() { __log error "$1"; }
-  uclock(){ __log uclock "$1"; }
+  uclock(){ __log uclock "$1"; } # new
 
   log_dev()   { __log dev "$1"; }
   log_test()  { __log qa "$1"; }

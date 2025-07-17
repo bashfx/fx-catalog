@@ -7,24 +7,23 @@
 #-------------------------------------------------------------------------------
 #=====================================code!=====================================
 
-  readonly LIB_STDFX="${BASH_SOURCE[0]}";
-
+  readonly LIB_STDFX="${BASH_SOURCE[0]}" 2>/dev/null;
   _index=
 
 #-------------------------------------------------------------------------------
 # Load Guard
 #-------------------------------------------------------------------------------
-
-
-
 if ! _index=$(is_lib_registered "LIB_STDFX"); then 
 
   register_lib LIB_STDFX;
 
-
 #-------------------------------------------------------------------------------
 # Utils
 #-------------------------------------------------------------------------------
+
+  command_exists(){ type "$1" &> /dev/null; }
+  
+  function_exists(){ [ -n "$1" ] && declare -F "$1" >/dev/null; };
 
   # Returns 0 (true) if the string is null or contains only whitespace.
   is_empty(){
@@ -53,7 +52,10 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
     [[ -n "${1//[[:space:]]/}" ]]
   }
 
-
+  # I always forget this
+  to_upper(){
+    echo "$1" | tr '[:lower:]' '[:upper:]';
+  }
 
 
   # Returns 0 (true) if string $2 contains substring $1.
@@ -101,6 +103,12 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
   # Returns 0 (true) if the string is a valid shell identifier (e.g., a variable name).
   is_name(){
     [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]
+  }
+
+
+  # It is the most robust way to check for an array in Bash.
+  is_array() {
+    [[ -n "$1" ]] && declare -p "$1" 2>/dev/null | grep -q 'declare -[aA]';
   }
 
   # Returns 0 (true) if string $2 starts with prefix $1.

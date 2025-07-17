@@ -82,7 +82,7 @@ if ! _index=$(is_lib_registered "LIB_INCLUDE"); then
       lib_path="$inc_path/$lib.sh";
       if [ -f "$lib_path" ]; then
         source "$lib_path" && {
-          okay "Sourced '$lib' from: ($lib_path)";
+          #okay "Sourced '$lib' from: ($lib_path)";
           return 0
         }
         error "[INC] source failed to load the '$lib' package at: ($lib_path)."

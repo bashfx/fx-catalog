@@ -114,7 +114,7 @@ if ! _index=$(is_lib_registered "LIB_STDOPTS"); then
   }
 
 
-  options(){
+  _options(){
 
     _fx_run_options_hook "_pre_options" "$@";
     global_options "${@}";

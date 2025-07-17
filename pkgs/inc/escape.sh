@@ -64,8 +64,8 @@ if ! _index=$(is_lib_registered "LIB_ESCAPE"); then
   sp=' ';
 
   snek=$'\xe2\x99\x8b';
-  itime=$'\xe2\xa7\x97';
-  spark=$'\xe2\x9f\xa1';
+
+
   flag_off=$'\xe2\x9a\x90';
   flag_on=$'\xe2\x9a\x91';
   diamond=$'\xE1\x9B\x9C';
@@ -121,6 +121,9 @@ if ! _index=$(is_lib_registered "LIB_ESCAPE"); then
   uhour=$'\u29D6'     # ⧖ 
   udate=$'\u1F5D3'    # 🗓
 
+  itime=$'\xe2\xa7\x97'; # dup?
+
+  uspark=$'\xe2\x9f\xa1'; #todo: change to unicode format
 
 
   LINE="$(printf '%.0s-' {1..54})";
