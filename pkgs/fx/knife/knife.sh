@@ -16,12 +16,14 @@
 #-------------------------------------------------------------------------------
 #=====================================code!=====================================
 # Dev Note: This is an early alpha version and will need to refactored later.
-
-SELF_PATH="$0";
+  
+  readonly KINFE_PATH="${BASH_SOURCE[0]}";
+  SELF_PATH="$0";
 
 #-------------------------------------------------------------------------------
-# Core Includes
+# Boot
 #-------------------------------------------------------------------------------
+
   _is_dir(){
     [ -n "$1" ] && [ -d "$1" ] && return 0;
     return 1;
@@ -34,14 +36,29 @@ SELF_PATH="$0";
     _inc="$FXI_INC_DIR";
     _app="$FXI_APP_DIR";
   else 
-    printf "[ENV]. Cant locate [include] ($_inc). FX framework not installed.\n";
+    printf "[ENV]. Cant locate [include] ($_inc). Fatal.\n";
     exit 1;
   fi
 
-  source "$_inc/include.sh"; 
-
 #-------------------------------------------------------------------------------
-# Core Includes
+# Core Libraries
+#-------------------------------------------------------------------------------
+
+  source "$_inc/base.sh"; 
+
+  if is_base_ready; then
+    fx_smart_source stdfx    || exit 1;
+    fx_smart_source stdutils || exit 1;
+    fx_smart_source stdfx    || exit 1;
+    fx_smart_source stderr   || exit 1;
+  else
+    error "Problem loading core libaries";
+    exit 1;
+  fi
+
+  _using( MD5 FIND GREP AWK DATE SED COLUMN );
+#-------------------------------------------------------------------------------
+# State Vars
 #-------------------------------------------------------------------------------
 
 
@@ -62,8 +79,14 @@ SED_INPLACE_OPT="" # Option for sed -i based on GNU/BSD
 # --- Globals ---
 KNIFE_DISABLE_HISTORY= #unused atm
 
-KNIFE_KNOWN_FILES="$HOME/.knife_known"
-KNIFE_HISTORY="$HOME/.knife_history"
+KNIFE_ETC="$(xdg_init 'etc' 'fx/knife')";
+
+if is_rw_dir "$KNIFE_ETC"; then
+  KNIFE_KNOWN_FILES="$KNIFE_ETC/knife_known";
+  KNIFE_HISTORY="$KNIFE_ETC/knife_history";
+else
+  KNIFE_HISTORY_DISABLED=1;
+fi
 
 BACKUP_SUFFIX=".bak"
 
@@ -84,11 +107,11 @@ KNIFE_EXCLUDES=(
 )
 
 # --- Color Definitions ---
-red=$'\x1B[31m';
-orange=$'\x1B[38;5;214m';
-green=$'\x1B[32m';
-blue=$'\x1B[36m';
-RESET=$'\x1B[0m';
+# red=$'\x1B[31m';
+# orange=$'\x1B[38;5;214m';
+# green=$'\x1B[32m';
+# blue=$'\x1B[36m';
+# RESET=$'\x1B[0m';
 
 
 
@@ -97,43 +120,33 @@ RESET=$'\x1B[0m';
 #-------------------------------------------------------------------------------
 
 # Logs messages to stderr
-stderr() { printf "%s\n" "$@" >&2; }
+#stderr() { printf "%s\n" "$@" >&2; }
 
 # Standardized return codes
 knife_success() { return 0; }
 knife_fail() { return 1; }
 
-# Colorized logging functions (messages to stderr)
-error() { stderr "${red}$1${RESET}"; knife_fail; } # Note: knife_fail does not exit, sets return code
-warn()  { stderr "${orange}$1${RESET}"; }
-okay()  { stderr "${green}$1${RESET}"; }
-info()  { stderr "${blue}$1${RESET}"; }
+# # Colorized logging functions (messages to stderr)
+# error() { stderr "${red}$1${RESET}"; knife_fail; } # Note: knife_fail does not exit, sets return code
+# warn()  { stderr "${orange}$1${RESET}"; }
+# okay()  { stderr "${green}$1${RESET}"; }
+# info()  { stderr "${blue}$1${RESET}"; }
 
 
 #-------------------------------------------------------------------------------
 # Core Utilities
 #-------------------------------------------------------------------------------
 
-# Checks if a command exists and stores its path in a global variable
-__check_utility() {
-  local cmd_name="$1"
-  local global_var_name="$2"
-  local cmd_path=""
 
-  if command -v "$cmd_name" >/dev/null 2>&1; then
-    cmd_path=$(command -v "$cmd_name")
-  fi
-  eval "$global_var_name=\"$cmd_path\"" # Set the global variable
-}
 
 # Checks for all required external dependencies at startup
 __check_all_dependencies() {
   local missing_critical=0
 
   # Check for md5sum/md5
-  __check_utility "md5sum" "MD5_CMD"
+  cmd_wrapper "md5sum" "MD5_CMD"
   if [[ -z "$MD5_CMD" ]]; then
-    __check_utility "md5" "MD5_CMD" # Try macOS md5
+    cmd_wrapper "md5" "MD5_CMD" # Try macOS md5
   fi
   if [[ -z "$MD5_CMD" ]]; then
     error "Missing critical utility: md5sum or md5 (for hashing). Please install one."
@@ -141,9 +154,9 @@ __check_all_dependencies() {
   fi
 
   # Check for realpath/greadlink/readlink -f
-  __check_utility "realpath" "REALPATH_CMD"
+  cmd_wrapper "realpath" "REALPATH_CMD"
   if [[ -z "$REALPATH_CMD" ]]; then
-    __check_utility "greadlink" "REALPATH_CMD" # macOS GNU readlink
+    cmd_wrapper "greadlink" "REALPATH_CMD" # macOS GNU readlink
   fi
   # Fallback for readlink -f (standard readlink might not have -f)
   if [[ -z "$REALPATH_CMD" ]]; then
@@ -157,21 +170,21 @@ __check_all_dependencies() {
   fi
 
   # Check for date (for history formatting)
-  __check_utility "date" "DATE_CMD"
+  cmd_wrapper "date" "DATE_CMD"
   if [[ -z "$DATE_CMD" ]]; then
     error "Missing critical utility: date (for history timestamps). Please install."
     missing_critical=1
   fi
 
   # Check for find (for search_here)
-  __check_utility "find" "FIND_CMD"
+  cmd_wrapper "find" "FIND_CMD"
   if [[ -z "$FIND_CMD" ]]; then
     error "Missing critical utility: find (for search command). Please install."
     missing_critical=1
   fi
 
   # Check for sed (for file manipulation) and determine in-place option
-  __check_utility "sed" "SED_CMD"
+  cmd_wrapper "sed" "SED_CMD"
   if [[ -z "$SED_CMD" ]]; then
     error "Missing critical utility: sed (for file manipulation). Please install."
     missing_critical=1
@@ -188,7 +201,7 @@ __check_all_dependencies() {
   fi
 
   # Check for column (non-critical, for history formatting)
-  __check_utility "column" "COLUMN_CMD"
+  cmd_wrapper "column" "COLUMN_CMD"
   if [[ -z "$COLUMN_CMD" ]]; then
     warn "Optional utility 'column' not found. History output may not be aligned."
   fi
@@ -200,21 +213,17 @@ __check_all_dependencies() {
 }
 
 # Helper to check if a file exists and report error if not
-__check_file_exists_or_fail() {
-  local file="$1"
-  local err_msg=""
-  if [[ -z "$file" ]]; then
-    err_msg="Missing required filename argument."
-  elif [[ ! -f "$file" ]]; then
-    err_msg="File not found: '$file'"
-  fi
-
-  if [[ -n "$err_msg" ]]; then
-    error "$err_msg"
-    knife_fail
+_require_file_arg(){
+  local file="$1" err;
+  if ! is_name "$file"; then
+    err="Missing required filename argument.";
+  elif ! is_rw_file "$file"; then
+    err="No read-write file found at: '$file', check permissions.";
   else
-    knife_success
+    return 0;
   fi
+  error "$err";
+  return 1;
 }
 
 #-------------------------------------------------------------------------------
@@ -250,11 +259,11 @@ __check_file_exists_or_fail() {
       rest="${rest#$varname}"
       output+="$prefix$value"
       raw="$rest"
-      matched=0
+      matched=0;
     done
-    output+="$raw"
-    printf '%s\n' "$output"
-    return $matched
+    output+="$raw";
+    printf '%s\n' "$output";
+    return $matched;
   }
 
   expand_line_vars(){
@@ -401,7 +410,7 @@ _escape_sed_pattern_literal() {
 # Checks if a file exists and is a shell script or .rc file
 _is_shell_or_rc() {
   local file="$1"
-  __check_file_exists_or_fail "$file" || return 1
+  _require_file_arg "$file" || return 1
   # Check for shebang OR common RC file extensions/names
   grep -qE '^#!.*sh' "$file" || [[ "$(basename "$file")" =~ (\.sh|\.rc|\.profile|\.bashrc|\.zshrc|\.kshrc|\.cshrc|\.tcshrc|\.login)$ ]] || [[ "$(basename "$file")" =~ ^\.rc[a-zA-Z0-9_]*$ ]]
 }
@@ -409,7 +418,7 @@ _is_shell_or_rc() {
 # Creates a backup of a file
 _backup_file() {
   local file="$1"
-  if __check_file_exists_or_fail "$file"; then
+  if _require_file_arg "$file"; then
     cp "$file" "$file$BACKUP_SUFFIX"
     okay "Backup created: ${file}${BACKUP_SUFFIX}"
     knife_success
@@ -434,7 +443,7 @@ _canonical_path_of() {
 # Returns MD5 hash of file content
 _file_md5() {
   local file="$1"
-  if __check_file_exists_or_fail "$file"; then
+  if _require_file_arg "$file"; then
     if [[ -n "$MD5_CMD" ]]; then
       if [[ "$MD5_CMD" =~ "md5sum" ]]; then
         "$MD5_CMD" "$file" | cut -d ' ' -f 1
@@ -510,7 +519,7 @@ _is_destructive_command() {
 # Adds/updates a file's entry in .knife_known
 _add_known_file() {
   local file="$1"
-  if ! __check_file_exists_or_fail "$file"; then knife_fail; fi
+  if ! _require_file_arg "$file"; then knife_fail; fi
 
   local canon_path=$(_canonical_path_of "$file")
   local path_hash=$(_string_md5 "$canon_path")
@@ -555,7 +564,7 @@ __log_history() {
   local target_file="$3" # This is the file name as passed to knife, not canonical yet
 
   # Add to known files and get canonical details
-  _add_known_file "$target_file" || return 1 # Ensure file is in known list and exists
+  _add_known_file "$target_file" || return 1; # Ensure file is in known list and exists
 
   local id=$(__get_next_history_id)
   local timestamp=$(date +%s) # Using 'date' as it's checked by __check_all_dependencies
@@ -578,7 +587,7 @@ __log_history() {
 # knife line <line_num> <file>
 knife_line() {
   local line_num="$1" file="$2"
-  __check_file_exists_or_fail "$file" || return 1
+  _require_file_arg "$file" || return 1;
   "$SED_CMD" -n "${line_num}p" "$file"
   # Removed redundant knife_success
 }
@@ -586,7 +595,7 @@ knife_line() {
 # knife lines quick <file>
 knife_lines_quick() {
   local file="$1"
-  __check_file_exists_or_fail "$file" || return 1
+  _require_file_arg "$file" || return 1;
   wc -l < "$file"
   # Removed redundant knife_success
 }
@@ -594,7 +603,7 @@ knife_lines_quick() {
 # knife banner <label> <file>
 knife_banner() {
   local label="$1" file="$2"
-  __check_file_exists_or_fail "$file" || return 1
+  _require_file_arg "$file" || return 1;
   # Removed ^ anchor to allow banners not at start of line (e.g., after a source)
   local line_num=$(grep -nE "#+\\s*$label\\s*#+" "$file" | cut -d: -f1)
   if [[ -n "$line_num" ]]; then
@@ -608,7 +617,7 @@ knife_banner() {
 # knife block <label> <file>
 knife_block() {
   local label="$1" file="$2"
-  __check_file_exists_or_fail "$file" || return 1
+  _require_file_arg "$file" || return 1
   awk "/### open:$label/{flag=1; next} /### close:$label/{flag=0} flag" "$file"
   # Removed redundant knife_success
 }
@@ -616,8 +625,8 @@ knife_block() {
 # knife linked <fileA> <fileB>
 knife_linked() {
   local fileA="$1" fileB="$2"
-  __check_file_exists_or_fail "$fileA" || return 1
-  __check_file_exists_or_fail "$fileB" || return 1
+  _require_file_arg "$fileA" || return 1
+  _require_file_arg "$fileB" || return 1
   # Match either canonical path or just basename for flexibility in existing source statements
   grep -qE "source +\"?($(_canonical_path_of "$fileA")|$(basename "$fileA"))\"?" "$fileB"
   if [[ $? -eq 0 ]]; then knife_success; else knife_fail; fi
@@ -626,8 +635,8 @@ knife_linked() {
 # knife link <fileA> <fileB> (adds source statement)
 knife_link() {
   local fileA="$1" fileB="$2"
-  __check_file_exists_or_fail "$fileA" || return 1
-  __check_file_exists_or_fail "$fileB" || return 1
+  _require_file_arg "$fileA" || return 1
+  _require_file_arg "$fileB" || return 1
   if ! _is_shell_or_rc "$fileB"; then
     error "Cannot link: $fileB is not a shell or .rc file."
     return 1 # Early exit on error
@@ -648,7 +657,7 @@ knife_link() {
 knife_unlink() {
   local fileA="$1" fileB="$2"
   # Do not check fileA existence, as it might be deleted (unlink by label/line content)
-  __check_file_exists_or_fail "$fileB" || return 1
+  _require_file_arg "$fileB" || return 1
   if ! _is_shell_or_rc "$fileB"; then
     error "Cannot unlink: $fileB is not a shell or .rc file."
     return 1 # Early exit on error
@@ -684,7 +693,7 @@ knife_unlink() {
 # knife getv <key> <file>
 knife_getv() {
   local key="$1" file="$2"
-  __check_file_exists_or_fail "$file" || return 1
+  _require_file_arg "$file" || return 1
   # Extract value after '=', strip trailing semicolons/comments and leading/trailing whitespace
   grep -E "^\s*${key}\s*=" "$file" | tail -n1 | cut -d= -f2- | "$SED_CMD" -E 's/;\s*$//;s/\s*#.*$//;s/^\s*//;s/\s*$//'
   # Removed redundant knife_success
@@ -693,7 +702,7 @@ knife_getv() {
 # knife keys <file>
 knife_keys() {
   local file="$1"
-  __check_file_exists_or_fail "$file" || return 1
+  _require_file_arg "$file" || return 1
   # Extract key-value pairs, then strip trailing semicolons/comments from the output
   grep -E '^\s*[A-Za-z_][A-Za-z0-9_]*\s*=.*' "$file" | "$SED_CMD" -E 's/;\s*$//;s/\s*#.*$//'
   # Removed redundant knife_success
@@ -702,7 +711,7 @@ knife_keys() {
 # knife val <value_pattern> <file>
 knife_val() {
   local value_pattern="$1" file="$2"
-  __check_file_exists_or_fail "$file" || return 1
+  _require_file_arg "$file" || return 1
   # Search for lines where VALUE part contains the pattern (after first '=')
   # Then cut the line to only return the KEY name
   grep -E '^[A-Za-z_][A-Za-z0-9_]*\s*=[^=]*'"${value_pattern}"'.*' "$file" | cut -d= -f1 | "$SED_CMD" -E 's/^\s*//;s/\s*$//'
@@ -712,7 +721,7 @@ knife_val() {
 # knife setv <key> <value> <file> (aliased by defv)
 knife_setv() {
   local key="$1" value="$2" file="$3"
-  __check_file_exists_or_fail "$file" || return 1
+  _require_file_arg "$file" || return 1
   _backup_file "$file" || return 1
   if grep -qE "^\s*${key}\s*=" "$file"; then
     "$SED_CMD" "$SED_INPLACE_OPT" "s|^\s*${key}\s*=.*|${key}=${value}|" "$file"
@@ -728,7 +737,7 @@ knife_setv() {
 # knife split <line_num> <file>
 knife_split() {
   local line="$1" file="$2"
-  __check_file_exists_or_fail "$file" || return 1
+  _require_file_arg "$file" || return 1
   head -n "$line" "$file" > "${file}.part1"
   tail -n +$((line + 1)) "$file" > "${file}.part2"
   okay "Split ${file} into ${file}.part1 and ${file}.part2"
@@ -743,8 +752,8 @@ knife_inject() {
   local src="$1" target="$2"
   local name=$(basename "$src") # Calculate name once
 
-  __check_file_exists_or_fail "$src" || return 1
-  __check_file_exists_or_fail "$target" || return 1
+  _require_file_arg "$src" || return 1
+  _require_file_arg "$target" || return 1
 
   if [[ -z "$name" ]]; then # Defensive check
     error "Cannot determine filename for injection marker from source: $src"
@@ -767,7 +776,7 @@ knife_inject() {
   # knife delete <line_num> <file> (replaces with comment)
   knife_delete_line() {
     local line_num="$1" file="$2"
-    __check_file_exists_or_fail "$file" || return 1
+    _require_file_arg "$file" || return 1
     _backup_file "$file" || return 1
     # Replace content of line_num with a comment to preserve line count and mark deletion
     "$SED_CMD" "$SED_INPLACE_OPT" "${line_num}s/.*/#knife deleted line $(__format_timestamp "$(date +%s)")/" "$file"
@@ -784,7 +793,7 @@ knife_inject() {
   # knife meta <file>
   knife_meta() {
     local file="$1"
-    __check_file_exists_or_fail "$file" || return 1
+    _require_file_arg "$file" || return 1
     grep -E '^#\s*[A-Za-z_]+\s*:' "$file"
     # Removed redundant knife_success
   }
@@ -792,7 +801,7 @@ knife_inject() {
   # knife metaget <key> <file>
   knife_metaget() {
     local key="$1" file="$2"
-    __check_file_exists_or_fail "$file" || return 1
+    _require_file_arg "$file" || return 1
     # Match key, extract content after first colon, remove leading/trailing whitespace and trailing semicolons
     grep -E "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f2- | "$SED_CMD" -E 's/;\s*$//;s/^\s*//;s/\s*$//'
     # Removed redundant knife_success
@@ -801,7 +810,7 @@ knife_inject() {
   # knife metaset <key> <value> <file>
   knife_metaset() {
     local key="$1" value="$2" file="$3"
-    __check_file_exists_or_fail "$file" || return 1
+    _require_file_arg "$file" || return 1
     _backup_file "$file" || return 1
     local marker_line_num=$(grep -nE "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f1)
     if [[ -n "$marker_line_num" ]]; then
@@ -824,7 +833,7 @@ knife_inject() {
   # knife metadel <key> <file>
   knife_metadel() {
     local key="$1" file="$2"
-    __check_file_exists_or_fail "$file" || return 1
+    _require_file_arg "$file" || return 1
     local marker_line_num=$(grep -nE "^#\\s*${key}\\s*:" "$file" | head -n1 | cut -d: -f1)
     if [[ -n "$marker_line_num" ]]; then
       _backup_file "$file" || return 1
@@ -849,7 +858,7 @@ knife_inject() {
   # knife copy <source_file> <num_lines> <output_file>
   knife_copy_lines() {
     local file="$1" n="$2" out="$3"
-    __check_file_exists_or_fail "$file" || return 1
+    _require_file_arg "$file" || return 1
     head -n "$n" "$file" > "$out"
     okay "Copied first ${n} lines of ${file} to ${out}"
     knife_success
@@ -858,7 +867,7 @@ knife_inject() {
   # knife has <pattern> <file>
   knife_has() {
     local pattern="$1" file="$2"
-    __check_file_exists_or_fail "$file" || return 1
+    _require_file_arg "$file" || return 1
     if grep -qE "$pattern" "$file"; then
       info "Pattern '${pattern}' found in ${file}."
       knife_success
@@ -872,7 +881,7 @@ knife_inject() {
   # knife show <pattern> <file>
   knife_show() {
     local pattern="$1" file="$2"
-    __check_file_exists_or_fail "$file" || return 1
+    _require_file_arg "$file" || return 1
     if ! grep -nE "$pattern" "$file"; then
       info "No matches found for '${pattern}' in ${file}."
     fi
@@ -884,6 +893,7 @@ knife_inject() {
     local requested_fields=""
     local file_query_arg=""
     local field_map="id:0 time:1 cmd:2 params:3 vanity:4 path_hash:5 content_hash:6"
+    # todo: must support bash 3.2
     local -A headers=(
       [id]="ID" [time]="Time"$'\t'$'\t' [cmd]="Command" [params]="Parameters"
       [vanity]="File"$'\t' [path_hash]="PathHash" [content_hash]="ContentHash"
@@ -917,6 +927,7 @@ knife_inject() {
     fi
     requested_fields="${requested_fields%,}" # Trim trailing comma
 
+    # todo not bash 3.2 compat
     local -a field_names=($(echo "$requested_fields" | tr ',' ' '))
     local -a field_indices=()
     local -a display_headers=()
@@ -1304,17 +1315,17 @@ knife_inject() {
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 
   orig_args=("${@}")
-  options "${orig_args[@]}";
+  options "${orig_args[@]}"; # global options
 
-    # Filter out flags to get positional arguments for main().
-    args=()
-    for arg in "${orig_args[@]}"; do
-      [[ "$arg" == -* ]] && continue
-      args+=("$arg")
-    done
+  # Filter out flags to get positional arguments for main().
+  args=()
+  for arg in "${orig_args[@]}"; do
+    [[ "$arg" == -* ]] && continue
+    args+=("$arg")
+  done
 
-    main "${args[@]}";
-    exit $?;
+  main "${args[@]}";
+  exit $?;
 
 fi
 

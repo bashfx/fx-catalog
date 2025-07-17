@@ -53,16 +53,16 @@
 # Core Includes
 #-------------------------------------------------------------------------------
 
-  source "$_inc/include.sh"; 
+  source "$_inc/base.sh"; 
 
-  if _is_dir "$_app/knife"; then
-    _knife="$_app/knife/knife.sh";
-  else 
-    printf "[ENV] Cant locate [kinfe]. Fatal.\n";
-    exit 1;
-  fi
-
-  $_knife;
+  # if _is_dir "$_app/knife"; then
+  #   _knife="$_app/knife/knife.sh";
+  # else 
+  #   printf "[ENV] Cant locate [kinfe]. Fatal.\n";
+  #   exit 1;
+  # fi
+  # unset _app _inc;
+  # $_knife;
 
 #-------------------------------------------------------------------------------
 # Core Includes
@@ -110,6 +110,7 @@
   fx_smart_source integrity  || exit 1
   fx_smart_source pkglinker  || exit 1
 
+  KNIFE="$(map_core_app knife)";
 
 #-------------------------------------------------------------------------------
 # Templates

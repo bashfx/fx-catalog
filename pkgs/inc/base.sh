@@ -110,6 +110,7 @@
     noimp;
   }
 
+
 #-------------------------------------------------------------------------------
 # Library Helpers
 #-------------------------------------------------------------------------------
@@ -141,6 +142,35 @@
     index_of "$1" "${FX_LIBS[@]}";
   }
 
+  is_base_ready(){
+    [ -n "$__INC_BASE" ] && [  -d "$__INC_BASE" ] && return 0;
+    return 1;
+  }
+
+  is_app_ready(){
+    [ -n "$__APP_BASE" ] && [  -d "$__APP_BASE" ] && return 0;
+    return 1;
+  }
+
+
+  map_core_app(){
+    local app="$1" app_path;
+
+    if is_app_ready; then 
+      app_path="$__APP_BASE";
+      pkg_path="${app_path}/${app}";
+      cmd_path="${pkg_path}/${app}.sh";
+
+      if _is_dir "$pkg_path"; then
+        printf -v "$app" '%s' "${cmd_path}";
+        echo "$cmd_path";
+        return 0;
+      fi
+
+    fi
+    fatal "[ENV] Cant locate [$app]. Fatal.\n";
+  }
+
 #-------------------------------------------------------------------------------
 # Micro Lib Utilities
 #-------------------------------------------------------------------------------
@@ -166,17 +196,25 @@
   # When Base loads, it needs to check for FX
   if [ -d "$FX_INC_DIR" ]; then
     __INC="$FX_INC_DIR";
+    __APP="$FX_APP_DIR";
   else
     # fallback on the neighborly version
     __INC="$(dirname $LIB_BASE)";
+    __APP="$(dirname $__INC)";
   fi
+
+
 
 
   if [ -n "$__INC" ] && [ -d "$__INC" ]; then
     #incbase usually comes from the toplevel caller if so just use it
     readonly __INC_BASE="$__INC";
-    unset __INC;
+
     info "Runtime include path set to [$_INC_BASE]";
+
+    readonly __APP_BASE="$__APP";
+    unset __INC;
+    unset __APP;
   else
     fatal "[BASE] Nope."; # pretty fatal dont even try
   fi

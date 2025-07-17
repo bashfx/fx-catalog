@@ -9,6 +9,51 @@
 #
 #===============================================================================
 
+  readonly XSYNC_PATH="${BASH_SOURCE[0]}";
+
+#-------------------------------------------------------------------------------
+# Boot
+#-------------------------------------------------------------------------------
+
+  _is_dir(){
+    [ -n "$1" ] && [ -d "$1" ] && return 0;
+    return 1;
+  }
+
+  if _is_dir "$FX_INC_DIR"; then
+    _inc="$FX_INC_DIR";
+    _app="$FX_APP_DIR";
+  elif _is_dir "$FXI_INC_DIR"; then
+    _inc="$FXI_INC_DIR";
+    _app="$FXI_APP_DIR";
+  else 
+    printf "[ENV]. Cant locate [include] ($_inc). Fatal.\n";
+    exit 1;
+  fi
+
+#-------------------------------------------------------------------------------
+# Core Libraries
+#-------------------------------------------------------------------------------
+
+  source "$_inc/base.sh"; 
+
+  if is_base_ready; then
+    fx_smart_source stdfx    || exit 1;
+    fx_smart_source stdutils || exit 1;
+    fx_smart_source stdfx    || exit 1;
+    fx_smart_source stderr   || exit 1;
+  else
+    error "Problem loading core libaries";
+    exit 1;
+  fi
+
+#-------------------------------------------------------------------------------
+# State Vars
+#-------------------------------------------------------------------------------
+
+
+
+
 #note: rsync requires asbolute path
 #note: make sure remote rsync bin is known by local rsync
 #note: any errors will cause rsync to fail

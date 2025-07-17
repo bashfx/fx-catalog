@@ -23,8 +23,9 @@ if ! _index=$(is_lib_registered "LIB_STDERR"); then
 
 
   readonly LOCAL_LIB_DIR="$(dirname ${LIB_STDERR})";
-  source "${LOCAL_LIB_DIR}/stdopts.sh";
   source "${LOCAL_LIB_DIR}/escape.sh";
+  source "${LOCAL_LIB_DIR}/stdopts.sh";
+
 
 
   # QUITE_MODE guards set in stdopts.options()

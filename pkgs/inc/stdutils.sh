@@ -26,6 +26,12 @@ if ! _index=$(is_lib_registered "LIB_STDUTILS"); then
 # Utils
 #-------------------------------------------------------------------------------
 
+  deref_var() {
+    local __varname="$1"
+    [[ "$__varname" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || return 1;
+    eval "printf '%s' \"\$${__varname}\"";
+  }
+
   #update to take prefix as a paramter isntead of do_
   do_inspect(){
     declare -F | grep 'do_' | awk '{print $3}'

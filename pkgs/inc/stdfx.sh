@@ -142,11 +142,14 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
 
   # Lists executable commands or scripts in the specified directory.
   ls_bin(){
-    is_path "$1" || return 1
-    local dir="$1"
-    find "$dir" -maxdepth 1 -type f -executable -print0 | xargs -0 -n 1 basename
+    is_path "$1" || return 1;
+    local dir="$1";
+    find_one "$dir";
   }
 
+  find_one(){
+    find "$1" -maxdepth 1 -type f -executable -print0 | xargs -0 -n 1 basename;
+  };
 #-------------------------------------------------------------------------------
 # Dir/Tree Support
 #-------------------------------------------------------------------------------
@@ -163,8 +166,8 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
 
   # Lists all subdirectories in the specified directory.
   ls_dirs(){
-    is_dir "$1" || return 1
-    find "$1" -mindepth 1 -maxdepth 1 -type d -print0 | xargs -0 -n 1 basename
+    is_dir "$1" || return 1;
+    find_one "$1";
   }
 
   # Lists all files in the specified directory.
@@ -199,13 +202,15 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
   # valid path var, checks for type file
   # Returns 0 (true) if the string is a valid file path.
   is_file() {
-    [ -n "$1" ] && test -f "$1"
+    [ -n "$1" ] && test -f "$1";
   }
 
   # Returns 0 (true) if the string is a valid file path and is both readable and writable.
   is_rw_file() {
-    [ -n "$1" ] && test -f "$1" -a -r "$1" -a -w "$1"
+    [ -n "$1" ] && test -f "$1" -a -r "$1" -a -w "$1";
   }
+
+
 
   # Returns 0 (true) if the file at the given path is empty or contains only whitespace.
   is_empty_file(){
@@ -226,33 +231,33 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
 
   # Returns 0 (true) if the file is executable.
   is_executable(){
-    is_file "$1" || return 1
-    [ -n "$1" ] && test -x "$1"
+    is_file "$1" || return 1;
+    [ -n "$1" ] && test -x "$1";
   }
 
   # Returns 0 (true) if path 'a' is a subpath of directory 'b'.
   a_sub_path_b() {
-    is_path "$1" || return 1
-    is_path "$2" || return 1
-    [[ "$1" == "$2"/* ]]
+    is_path "$1" || return 1;
+    is_path "$2" || return 1;
+    [[ "$1" == "$2"/* ]];
   }
 
   # Returns 0 (true) if 'a' is a file within directory 'b'.
   a_file_in_b() {
-    is_path "$2" || return 1
-    [[ "$1" == "$2"/* ]] && is_file "$1"
+    is_path "$2" || return 1;
+    [[ "$1" == "$2"/* ]] && is_file "$1";
   }
 
   canon_path(){
-    is_path "$1" || return 1
-    realpath "$1"
+    is_path "$1" || return 1;
+    realpath "$1";
   }
 
   # Returns 0 (true) if path 'a' has the same canonical path as 'b'.
   a_canon_path_b() {
-    is_path "$1" || return 1
-    is_path "$2" || return 1
-    [[ "$(canon_path "$1")" == "$(canon_path "$2")" ]]
+    is_path "$1" || return 1;
+    is_path "$2" || return 1;
+    [[ "$(canon_path "$1")" == "$(canon_path "$2")" ]];
   }
 
 
@@ -261,22 +266,22 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
 
   # Returns 0 (true) if file 'a' is sourced by file 'b'.
   a_linked_b(){
-    is_file "$1" || return 1
-    is_file "$2" || return 1
-    grep -q "source[[:space:]]\+\(.\+\/\|)$1" "$2"
+    is_file "$1" || return 1;
+    is_file "$2" || return 1;
+    grep -q "source[[:space:]]\+\(.\+\/\|)$1" "$2";
   }
 
   # Lists all files sourced by the given file.
   ls_source(){
     is_file "$1" || return 1
-    grep -o "source[[:space:]]\+\(.\+\/\|)[^[:space:]]\+" "$1" | cut -d ' ' -f 2
+    grep -o "source[[:space:]]\+\(.\+\/\|)[^[:space:]]\+" "$1" | cut -d ' ' -f 2;
   }
 
   # Copies the target file to a backup file with a pid.bak extension and returns the backup path.
   copy_bak(){
     is_file "$1" || return 1
-    local pid=$ file="$1" bak_file="$file.$pid.bak"
-    cp "$file" "$bak_file" && echo "$bak_file"
+    local pid=$ file="$1" bak_file="$file.$pid.bak";
+    cp "$file" "$bak_file" && echo "$bak_file";
   }
 
 
@@ -304,19 +309,22 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
   #      xdg_path data -> $HOME/.local/data #xdg+ path
   # Returns the full XDG-compliant path for the specified string, following BashFX XDG+ conventions.
   xdg_path(){
-    local type="$1"
+    local type="$1" path; # app="${2:-}" path;
     case "$type" in
-      (home) echo "$HOME/.local" ;;
-      (lib)  echo "$HOME/.local/lib" ;;
-      (bin)  echo "$HOME/.local/bin" ;;
-      (data) echo "$HOME/.local/data" ;;
-      (config) echo "$HOME/.config" ;;  # Assuming a config type
-      (cache)  echo "$HOME/.cache" ;;
-      (state) echo "$HOME/.local/state" ;;
-      (share) echo "$HOME/.local/share" ;;
-      (tmp)  echo "$HOME/.cache/tmp" ;;
+      (home)    path="$HOME/.local" ;;
+      (lib)     path="$HOME/.local/lib" ;;
+      (etc)     path="$HOME/.local/etc" ;;
+      (bin)     path="$HOME/.local/bin" ;;
+      (data)    path="$HOME/.local/data" ;;
+      (config)  path="$HOME/.config" ;;  # Assuming a config type
+      (cache)   path="$HOME/.cache" ;;
+      (state)   path="$HOME/.local/state" ;;
+      (share)   path="$HOME/.local/share" ;;
+      (tmp)     path="$HOME/.cache/tmp" ;;
       (*)    echo ""; return 1;; 
     esac
+    #[ -n "$app" ] && path="$path/$app";
+    echo "$path";
   }
 
   # given the path, returns the string of the xdg+ compliant base path, and none if not xdg+ compliant
@@ -326,6 +334,7 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
     case "$path" in
       ($HOME/.local*) echo "home" ;;
       ($HOME/.local/lib*) echo "lib" ;;
+      ($HOME/.local/etc*) echo "etc" ;;
       ($HOME/.local/bin*) echo "bin" ;;
       ($HOME/.local/data*) echo "data" ;;
       ($HOME/.config*) echo "config" ;;
@@ -336,11 +345,23 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
       (*)            echo "none" ;;
     esac
   }
-  
+
+  #new
+  xdg_init(){
+    local type="$1" app="${2:-}" ret;
+    local path=$(xdg_path $type $app);ret=$?;
+    if [ $ret -eq 0 ] && ! is_dir $path; then
+      [ -n "$app" ] && path="$path/$app";
+      mkdir -p "$path";
+      echo "$path";
+    fi    
+    return 1;
+  }
 
   # Returns 0 (true) if the given path is XDG+ compliant.
   is_xdg_path(){
-    local path="$1"
+    local path="$1";
+    # todo: fix, this should see if path is subpath (a_sub_path_b)
     [[ "$(xdg_type "$path")" != "none" ]];
   }
 

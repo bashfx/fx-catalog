@@ -4,6 +4,56 @@
 #-------------------------------------------------------------------------------
 #=====================================code!=====================================
 #-------------------------------------------------------------------------------
+
+  readonly SEMV_PATH="${BASH_SOURCE[0]}";
+
+#-------------------------------------------------------------------------------
+# Boot
+#-------------------------------------------------------------------------------
+
+  _is_dir(){
+    [ -n "$1" ] && [ -d "$1" ] && return 0;
+    return 1;
+  }
+
+  if _is_dir "$FX_INC_DIR"; then
+    _inc="$FX_INC_DIR";
+    _app="$FX_APP_DIR";
+  elif _is_dir "$FXI_INC_DIR"; then
+    _inc="$FXI_INC_DIR";
+    _app="$FXI_APP_DIR";
+  else 
+    printf "[ENV]. Cant locate [include] ($_inc). Fatal.\n";
+    exit 1;
+  fi
+
+#-------------------------------------------------------------------------------
+# Core Libraries
+#-------------------------------------------------------------------------------
+
+  source "$_inc/base.sh"; 
+
+  if is_base_ready; then
+    fx_smart_source stdfx    || exit 1;
+    fx_smart_source stdutils || exit 1;
+    fx_smart_source stdfx    || exit 1;
+    fx_smart_source stderr   || exit 1;
+  else
+    error "Problem loading core libaries";
+    exit 1;
+  fi
+
+  KNIFE="$(map_core_app knife)";
+  
+  _using( GIT FIND GREP AWK DATE SED );
+  
+#-------------------------------------------------------------------------------
+# State Vars
+#-------------------------------------------------------------------------------
+
+
+
+
   export TERM=xterm-256color;
   
   SEMV_EXEC="$0" #self reference
@@ -23,6 +73,9 @@
 #-------------------------------------------------------------------------------
 # Term
 #-------------------------------------------------------------------------------
+
+  #replace with stderr. 
+
 
   red=$(tput setaf 202)
   green=$(tput setaf 2)
@@ -45,7 +98,7 @@
 # Printers
 #-------------------------------------------------------------------------------
 
-  command_exists(){ type "$1" &> /dev/null;  }
+  #replace with stderr. 
 
   __printf(){
     local text color prefix
