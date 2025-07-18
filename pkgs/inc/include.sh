@@ -71,12 +71,16 @@ if ! _index=$(is_lib_registered "LIB_INCLUDE"); then
   fx_smart_source() {
     local lib="$1" ret inc rc lib_path inc_path;
 
+    ! is_base_ready && fatal "[INC] Base not ready. Critical paths missing.";
+
     if [ -z "$lib" ]; then
       error "[INC] smart_source: No lib name provided."
       return 1
     fi
 
-    inc_path=$(fx_smart_inc); ret=$?;
+    
+
+    inc_path=$__INC_BASE; ret=$?;
 
     if [ -n "$inc_path" ] && [ -d "$inc_path" ]; then
       lib_path="$inc_path/$lib.sh";
@@ -92,6 +96,29 @@ if ! _index=$(is_lib_registered "LIB_INCLUDE"); then
     fi  
 
     return 1;
+  }
+
+
+  convert_pkg(){
+    trace "[INC] checking for valid package name ($1)"
+    local this="$1"
+    local group pkg base group_path path
+
+
+    case "$this" in
+      (*[:.]*) group="${this%%[:.]*}"; pkg="${this#*[:.]}" ;;
+      (*) group="$this"; pkg="all" ;;
+    esac
+
+    group_path="$base/$group"
+
+
+    if [ -z "$pkg" ] || [ "$pkg" = "all" ]; then
+      path="$group_path"
+    elif [ -d "$group_path/$pkg" ]; then
+      path="$group_path/$pkg";
+    fi
+
   }
 
 

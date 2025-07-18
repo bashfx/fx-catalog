@@ -303,7 +303,7 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
     local date
     date=$(date +%Y%m%d)
     local pid=$
-    echo "$base/tmp_${date}_${pid}"
+    echo "$base/tmp_${date}_$$"
   }
 #-------------------------------------------------------------------------------
 # XDG+ Support
@@ -602,8 +602,7 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
 else
 
   error "Library LIB_STDFX found at index [$_index]";
-  exit 1;
-  
+  return 1;
 fi
 
 

@@ -10,7 +10,6 @@
   echo "loaded package.sh" >&2;
 
 
-
   #TODO: Review
   _install_core_libs() {
     info "Installing core libraries..."
@@ -95,7 +94,7 @@
   }
 
   do_list_installed_pkgs(){
-    local filter="$1"
+    local filter="$1"; 
     local manifest_file="${FX_ETC}/manifest.log"
 
     if [ ! -f "$manifest_file" ] || [ ! -s "$manifest_file" ]; then
@@ -104,32 +103,47 @@
     fi
 
     info "Listing installed packages:"
-    local line path alias group pkg_name path_minus_lib
-    while IFS= read -r line || [ -n "$line" ]; do
+    local line path pkg_dir rel_path pkg_id
+    while IFS= read -r line; do
+      trace "[PKG_LIST] Processing manifest line: $line"
+      # Skip comments and empty lines
       [[ -z "$line" || "$line" =~ ^# ]] && continue
+      
+      # Field 2 is the full path to the package's main script
       path=$(echo "$line" | awk '{print $2}')
-      
-      path_minus_lib="${path#$FX_LIB/}"
-      
-      group=$(echo "$path_minus_lib" | cut -d/ -f1)
-      pkg_name=$(echo "$path_minus_lib" | cut -d/ -f2)
+      trace "[PKG_LIST] Raw path from manifest: $path"
+      [ -z "$path" ] && continue
 
-      if [ -n "$group" ] && [ -n "$pkg_name" ]; then
+      # Get the directory of the script
+      pkg_dir=$(dirname "$path")
+      trace "[PKG_LIST] Package directory: $pkg_dir"
+
+      # Get the path relative to the FX_LIB directory
+      rel_path="${pkg_dir#$FX_LIB/}"
+      trace "[PKG_LIST] Relative path: $rel_path"
+
+      # Convert the path to a package ID (e.g., fx/testpkg -> fx.testpkg)
+      pkg_id="${rel_path//\//.}"
+      trace "[PKG_LIST] Package ID: $pkg_id; filter: $filter"
+
+      if [ -n "$pkg_id" ]; then
+
           if [ -n "$filter" ]; then
-              local filter_group="${filter%%[:.]*}"
-              local filter_pkg="${filter#*[:.]}"
-              if [ "$group" == "$filter_group" ]; then
-                  if [ -z "$filter_pkg" ] || [ "$filter_pkg" == "$group" ] || [ "$pkg_name" == "$filter_pkg" ]; then
-                       echo "$group.$pkg_name"
-                  fi
+              # Check if the package ID starts with the filter
+              if [[ "$pkg_id" == "$filter"* ]]; then
+                   trace "[PKG_LIST] Echoing filtered pkg_id: $pkg_id"
+                   printf "%s\n" "$pkg_id"
               fi
           else
-              echo "$group.$pkg_name"
+              trace "[PKG_LIST] Echoing pkg_id: $pkg_id"
+              printf "%s\n" "$pkg_id"
           fi
+
       else
           warn "Could not parse package ID from manifest line: $line"
       fi
-    done < "$manifest_file" | sort -u
+    done < "$manifest_file"
+    trace "[PKG_LIST] Finished processing manifest."
   }
 
 

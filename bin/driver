@@ -8,7 +8,11 @@ if [ -z "$1" ]; then
 fi
 
 TEST_NAME="$1"
-DRIVER_FILE="$(dirname "$0")/../tests/${TEST_NAME}-driver.sh"
+DRIVER_FILE="$(dirname "$0")/../tests/${TEST_NAME}.sh"
+
+if [ ! -f "$DRIVER_FILE" ]; then
+  DRIVER_FILE="$(dirname "$0")/../tests/${TEST_NAME}-driver.sh"
+fi
 
 if [ ! -f "$DRIVER_FILE" ]; then
   echo "Error: Driver file not found: $DRIVER_FILE"

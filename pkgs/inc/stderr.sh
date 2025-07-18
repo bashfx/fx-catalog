@@ -360,8 +360,6 @@ if ! _index=$(is_lib_registered "LIB_STDERR"); then
 #-------------------------------------------------------------------------------
 
 else
-
   error "Library LIB_STDERR found at index [$_index]";
-  exit 1;
-
+  return 1;
 fi

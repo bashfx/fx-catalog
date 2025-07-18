@@ -23,6 +23,7 @@ fx_manifest_add_entry() {
   # --- END NEW CHECK ---
 
   info "Adding '$path' to manifest..."
+  trace "[MANIFEST] Writing to manifest file: $file"
   sum=$(_integrity_get_checksum "$path") || return 1
   name=$(_manifest_get_alias_from_source "$path") || return 1
   
@@ -30,6 +31,7 @@ fx_manifest_add_entry() {
     error "Failed to write to manifest file: $file"
     return 1
   }
+  
   return 0
 }
 
@@ -40,17 +42,10 @@ fx_manifest_remove_entry() {
   local tmp="${file}.tmp.$$"
   
   info "Removing '$path' from manifest..."
-  grep -v " $path " "$file" > "$tmp" || {
-    if [[ $? -gt 1 ]]; then
-      error "Failed to read manifest file: $file"
-      rm -f "$tmp"
-      return 1
-    fi
-  }
-  
-  mv "$tmp" "$file" || {
-    error "Failed to update manifest file: $file"
-    rm -f "$tmp"
+  warn "[MANIFEST] Attempting to remove entry from manifest file: $file"
+  # Use sed -i for in-place editing to remove the line directly
+  sed -i "/$(escape_sed_pattern_literal "$path")/d" "$file" || {
+    error "Failed to remove entry from manifest file: $file"
     return 1
   }
   return 0

@@ -79,7 +79,7 @@ if ! _index=$(is_lib_registered "LIB_STDOPTS"); then
 
     # Process arguments in a single loop for clarity and efficiency.
     for arg in "$@"; do
-      echo "testing option arg $arg"
+      trace "testing option arg $arg"
       case "$arg" in
         --yes|-y)           opt_yes=0;;
         --flag*|-F)         opt_flags=0;;

@@ -121,7 +121,7 @@
   fx_smart_source proflink || exit 1
   fx_smart_source rcfile   || exit 1
   fx_smart_source template || exit 1
-  fx_smart_source manifest   || exit 1
+  fx_smart_source pkg.manifest   || exit 1
   fx_smart_source integrity  || exit 1
   fx_smart_source pkglinker  || exit 1
 
@@ -593,11 +593,14 @@ EOF
 
   # @driver F007
   fx_f007_driver() {
-    info "DRIVER: Testing FEATURE-007 (pkgfx Package Manager)"
+    magic "!!!DRIVER: Testing FEATURE-007 (pkgfx Package Manager)!"
     local ret=0
     local test_pkg_id="fx.testpkg"
     local devfx_dir
     devfx_dir="$(dirname "${BASH_SOURCE[0]}")"
+
+    warn "DIR is $devfx_dir";
+
     local pkgfx_cmd="${devfx_dir}/pkgfx"
 
     # --- Environment Staging ---

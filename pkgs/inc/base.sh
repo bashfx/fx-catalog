@@ -53,7 +53,7 @@
   # you will need global level QUIET_MODE to shut these ones up
   # they get overriden after boot
   
-  stderr(){ [ -z "$QUIET_MODE" ] &&  printf "%b" "\t:: ${1}$(color xx)\n" 1>&2; }
+  stderr(){ [ -z "$QUIET_MODE" ] && [ -z "$QUIET_BOOT_MODE" ] &&  printf "%b" "\t:: ${1}$(color xx)\n" 1>&2; }
 
 
   fatal(){ stderr "$(color red)$1";  exit 1; }
@@ -326,8 +326,6 @@
     fi
   }
 
-
-
 #-------------------------------------------------------------------------------
 # Micro Lib Utilities
 #-------------------------------------------------------------------------------
@@ -354,39 +352,45 @@
   }
 
 #-------------------------------------------------------------------------------
+# Switcher
+#-------------------------------------------------------------------------------
+
+  inc_env_mode(){
+
+    # When Base loads, it needs to check for FX
+    if [ -d "$FX_INC_DIR" ]; then
+      __INC="$FX_INC_DIR";
+      __APP="$FX_APP_DIR";
+    else
+      # fallback on the neighborly version
+      __INC="$(dirname $LIB_BASE)";
+      __APP="$(dirname $__INC)";
+    fi
+
+    warn "saw base paths: $__INC $__APP";
+
+    if [ -n "$__INC" ] && [ -d "$__INC" ]; then
+      #incbase usually comes from the toplevel caller if so just use it
+      readonly __INC_BASE="$__INC";
+      info "Runtime include path set to [$__INC_BASE]";
+
+      readonly __APP_BASE="$__APP";
+      info "Runtime app path set to [$__APP_BASE]";
+
+      unset __INC;
+      unset __APP;
+    else
+      fatal "[BASE] Nope."; # pretty fatal dont even try
+    fi
+
+
+  }
+
+#-------------------------------------------------------------------------------
 # Library Bootstrap
 #-------------------------------------------------------------------------------
 
-  # When Base loads, it needs to check for FX
-  if [ -d "$FX_INC_DIR" ]; then
-    __INC="$FX_INC_DIR";
-    __APP="$FX_APP_DIR";
-  else
-    # fallback on the neighborly version
-    __INC="$(dirname $LIB_BASE)";
-    __APP="$(dirname $__INC)";
-  fi
-
-  warn "saw base paths: $__INC $__APP";
-
-
-
-  if [ -n "$__INC" ] && [ -d "$__INC" ]; then
-    #incbase usually comes from the toplevel caller if so just use it
-    readonly __INC_BASE="$__INC";
-
-    info "Runtime include path set to [$__INC_BASE]";
-
-    readonly __APP_BASE="$__APP";
-
-
-    info "Runtime app path set to [$__APP_BASE]";
-
-    unset __INC;
-    unset __APP;
-  else
-    fatal "[BASE] Nope."; # pretty fatal dont even try
-  fi
+  inc_env_mode;
 
   register_lib LIB_BASE;
 

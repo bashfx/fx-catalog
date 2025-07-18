@@ -11,6 +11,17 @@
 
   echo "loaded paths.sh" >&2;
 
+  readonly LIB_PATHS="${BASH_SOURCE[0]}";
+  _index=
+
+#-------------------------------------------------------------------------------
+# Load Guard
+#-------------------------------------------------------------------------------
+
+if ! _index=$(is_lib_registered "LIB_PATHS"); then 
+
+  register_lib LIB_PATHS;
+
 
 
   init_xdg(){
@@ -30,4 +41,9 @@
     export XDG_FX_STATE="${XDG_FX_STATE:-$XDG_FX_HOME/.local/state}";
 
   }
+
+else
+  error "Library LIB_PATHS found at index [$_index]";
+  return 1;
+fi
 

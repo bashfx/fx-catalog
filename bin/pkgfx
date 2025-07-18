@@ -1,157 +1,96 @@
 #!/usr/bin/env bash
 #===============================================================================
-#  ________  ________  ________  ___  ___  ________ ___    ___ 
-# |\   __  \|\   __  \|\   ____\|\  \|\  \|\  _____\\  \  /  /|
-# \ \  \|\ /\ \  \|\  \ \  \___|\ \  \\\  \ \  \__/\ \  \/  / /
-#  \ \   __  \ \   __  \ \_____  \ \   __  \ \   __\\ \    / / 
-#   \ \  \|\  \ \  \ \  \|____|\  \ \  \ \  \ \  \_| /     \/  
-#    \ \_______\ \__\ \__\____\_\  \ \__\ \__\ \__\ /  /\   \  
-#     \|_______|\|__|\|__|\_________\|__|\|__|\|__|/__/ /\ __\ 
-#                        \|_________|              |__|/ \|__| 
-#
-#===============================================================================
-#-------------------------------------------------------------------------------
 #$ name: pkgfx
-#$ desc: BashFX Package Manager - manages installation, integrity, and linking of BashFX packages.
+#$ desc: BashFX Package Manager
 #$ author: Shebang
-#$ semver: 0.1.0
-#$ alias: pkgfx
-#-------------------------------------------------------------------------------
-#=====================================code!=====================================
+#$ semver: 0.2.0
+#===============================================================================
 
-  SELF_PATH="$0";
+# --- Bootstrap & Core Includes ---
 
-  # --- BashFX Core Environment Bootstrap (Mimics devfx for robustness) ---
-  # This block ensures include.sh and thus stderr.sh are loaded, providing
-  # core utilities and logging. It prioritizes the installed FX_INC_DIR
-  # but falls back to the local development FXI_INC_DIR if not installed yet.
-  if [ -n "$FX_INC_DIR" ]; then
-    __inc_path="$FX_INC_DIR"; # Already installed BashFX environment
-  elif [ -n "$FXI_INC_DIR" ]; then
-    __inc_path="$FXI_INC_DIR"; # Launcher environment for initial setup
+  # @ top
+  SELF="APP_PKGFX";
+  SELF_ARGS=("${@}");
+
+  readonly APP_PKGFX="${BASH_SOURCE[0]}";
+  readonly SELF_PATH="$0";
+
+  _is_dir(){ [ -n "$1" ] && [ -d "$1" ]; }
+
+  if _is_dir "$FX_INC_DIR"; then
+    _inc="$FX_INC_DIR";
+    _app="$FX_APP_DIR";
+  elif _is_dir "$FXI_INC_DIR"; then
+    _inc="$FXI_INC_DIR";
+    _app="$FXI_APP_DIR";
   else
-    # Fallback to relative path if no environment variables are set.
-    # This should only happen if the script is run directly outside the framework.
-    __inc_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../pkgs/inc";
-  fi
-
-  export FX_INC_DIR="$__inc_path"
-
-  if [ -f "$__inc_path/include.sh" ]; then
-    source "$__inc_path/include.sh" || {
-      printf "FATAL: Could not load core BashFX libraries from %s/include.sh\n" "$__inc_path" >&2;
-      exit 1;
-    }
-  else
-    printf "FATAL: Core BashFX include.sh not found at %s/include.sh\n" "$__inc_path" >&2;
+    printf "[ENV] Can't locate [include] directory. Fatal.\n" >&2;
     exit 1;
   fi
-  unset __inc_path;
+
+  source "$_inc/base.sh";
+
+  if is_base_ready; then
+    fx_smart_source stdfx     || exit 1;
+    fx_smart_source stdutils  || exit 1;
+    fx_smart_source stderr    || exit 1;
+    fx_smart_source paths     || exit 1;
+    fx_smart_source package   || exit 1;
+    fx_smart_source manifest  || exit 1;
+    fx_smart_source integrity || exit 1;
+    fx_smart_source pkglinker || exit 1;
+  else
+    error "Problem loading core libraries";
+    exit 1;
+  fi
+
+  boot "$SELF" "SELF";
+
+  # --- Script-specific Globals ---
+  opt_installed=1; # Default to off. Set to 0 by the options hook if --installed is present.
 
 
-  # --- Thisness Context & Namespace ---
-  # Defines the script's own context for generalized library functions.
-  __this_context() {
-    think "Setting this context [pkgfx]";
-    THIS_NAME="pkgfx";
-    THIS_ALIAS="pkgfx";
-    THIS_RC_NAME="pkgfx.rc"; # Although pkgfx might not have its own .rc, good to define
-    THIS_SELF="$SELF_PATH";
-    THIS_LABEL="bashfx.pkg"; # A more specific label
-    THIS_LINK_BLOCK="link:${THIS_LABEL}";
-    THIS_RC_BLOCK="rc:${THIS_LABEL}";
+#-------------------------------------------------------------------------------
+# System Funcs
+#-------------------------------------------------------------------------------
+  
 
-    # Define pkgfx-specific paths (derived from BashFX XDG standard)
-    THIS_LIB_DIR="${FX_LIB}/fx/${THIS_ALIAS}"
-    THIS_ETC_DIR="${FX_ETC}/fx/${THIS_ALIAS}"
-    THIS_RC_FILE="${THIS_ETC_DIR}/${THIS_RC_NAME}"
-  }
-  __this_context # Set the context immediately
+# --- Options Hook ---
 
-
-  # --- Standard Library Includes ---
-  # Source necessary BashFX libraries.
-  # Ensure they are loaded after include.sh (which brings stderr.sh)
-  fx_smart_source paths       || exit 1
-  fx_smart_source proflink    || exit 1 # For profile linking operations
-  fx_smart_source rcfile      || exit 1 # For managing .rc files
-  fx_smart_source template    || exit 1 # For parsing embedded documentation
-  fx_smart_source package     || exit 1 # For core package operations (list, check, install)
-  fx_smart_source manifest    || exit 1 # For managing the package manifest
-  fx_smart_source integrity   || exit 1 # For package integrity checks
-  fx_smart_source pkglinker   || exit 1 # For creating/removing package symlinks
-
-
-  # --- Core Initialization ---
-  # Initialize global FX_ paths based on XDG, if not already set.
-  _initialize_environment() {
-    if [ -z "$XDG_FX_HOME" ]; then # Checks if XDG is not initialized
-      trace "XDG environment not found, initializing..."
-      init_xdg; # From paths.sh
-    fi
-
-    # Ensure core FX directories are set, even if pkgfx is run standalone.
-    # This mirrors init_fx from devfx for consistency.
-    export FX_APP_NAME="${FX_APP_NAME:-fx}";
-    export FX_BIN="${FX_BIN:-$XDG_FX_BIN/$FX_APP_NAME}";
-    export FX_LIB="${FX_LIB:-$XDG_FX_LIB/$FX_APP_NAME}";
-    export FX_INC="${FX_INC:-$FX_LIB/inc}"; # This one is important for internal calls
-    export FX_ETC="${FX_ETC:-$XDG_FX_CONFIG/$FX_APP_NAME/etc}";
-    export FX_DATA="${FX_DATA:-$XDG_FX_SHARE/$FX_APP_NAME}";
-    export FX_STATE="${FX_STATE:-$XDG_FX_STATE/$FX_APP_NAME}";
-    export FX_RC="${FX_RC:-${FX_ETC}/fx.rc}";
-    export FXI_PKG_DIR="${FXI_ROOT_DIR:-$(cd "$(dirname "$SELF_PATH")" && pwd)/pkgs}"; # For source packages
-  }
-
-
-  # @lbl options
-  options(){
-    think "options()"
-    local this next opts=("${@}")
-
-    # Initialize standard flags to their 'off' state (1 = false)
-    opt_debug=1; opt_trace=1; opt_quiet=1; opt_force=1; opt_yes=1; opt_dev=1; opt_installed=1;
-
-    for ((i=0; i<${#opts[@]}; i++)); do
-      this=${opts[i]}
-      case "$this" in
-        --force|-f)   opt_force=0 ;;
-        --debug|-d)   opt_debug=0 ;;
-        --trace|-t)   opt_trace=0; opt_debug=0 ;; # Trace enables debug
-        --quiet|-q)   opt_quiet=0 ;;
-        --yes|-y)     opt_yes=0 ;;
-        --dev|-D)     opt_dev=0; opt_trace=0; opt_debug=0 ;; # Dev enables trace and debug
-        --installed|-i) opt_installed=0 ;;
-        --help|-h)    usage; exit 0 ;;
-        -*)           error "Invalid flag: $this"; return 1 ;;
+  # Hook for stdopts.sh to add pkgfx-specific flags. The name is important.
+  pkgfx_post_options() {
+    # The _options function passes all arguments to the hook.
+    # We need to loop through them to find our script-specific flag.
+    local arg;
+    for arg in "$@"; do
+      case "$arg" in
+        --installed|-i)
+          opt_installed=0;
+          # We don't need to remove the arg here, the main entry point will filter all flags.
+          ;;
       esac
     done
-
-    # Apply hierarchical verbosity rules based on parsed options
-    [ "$opt_trace" -eq 0 ] && opt_debug=0 # Trace implies debug
-    [ "$opt_dev" -eq 0 ] && { opt_trace=0; opt_debug=0; } # Dev implies trace and debug
-
-    # Final override: if quiet is on, it trumps all other verbosity.
-    if [ "$opt_quiet" -eq 0 ]; then
-      opt_debug=1; opt_trace=1; opt_silly=1;
-    fi
-
-    return 0
+    return 0;
   }
 
 
-  # @lbl dispatch
+#-------------------------------------------------------------------------------
+# System Funcs
+#-------------------------------------------------------------------------------
+  
+
+# --- Dispatch ---
+
   dispatch(){
-    think "dispatch()"
-    local cmd="$1"
-    shift # The rest of $@ are now arguments for the subcommand.
+    local cmd="$1";
+    shift;
 
     case "$cmd" in
       list)
         if [ "$opt_installed" -eq 0 ]; then
-          do_list_installed_pkgs "$@"
+          do_list_installed_pkgs "$@";
         else
-          do_list_available_pkgs "$@"
+          do_list_available_pkgs "$@";
         fi
         ;;
       check)          do_check_pkg "$@" ;;
@@ -160,39 +99,30 @@
       verify)         fx_integrity_verify_all "$@" ;;
       link)           fx_pkglinker_link_by_alias "$@" ;;
       unlink)         fx_pkglinker_unlink_by_alias "$@" ;;
-      clear-manifest) fx_manifest_clear "$@" ;; # New command for manifest.sh
+      clear-manifest) fx_manifest_clear "$@" ;;
       help|-h|--help) usage "$@" ;;
+      noop)           noop;;
       "")             usage >&2; return 1 ;;
       *)              error "Unknown command: '$cmd'"; usage >&2; return 1 ;;
     esac
-    return $?
+    return $?;
   }
 
+# --- Main ---
 
-  # @lbl main
   main(){
-    think "main()"
-    _initialize_environment # Setup FX_ paths and XDG
-    
-    options "${orig_args[@]}" || exit 1 # Parse flags first
+    # The _boot_session from devfx should be called here if we need to initialize XDG
+    # The F007 driver calls init_fx and ensure_fx_ready, so we don't need it for the test
+    # but a standalone run would require it.
+    # For now, we rely on the calling environment.
 
-    local args=()
-    for arg in "${orig_args[@]}"; do
-      [[ "$arg" == -* ]] && continue # Filter out flags
-      args+=("$arg")
-    done
-
-    # If no positional args are given after filtering flags, show usage.
-    [ ${#args[@]} -eq 0 ] && { usage; exit 0; }
-    
-    dispatch "${args[@]}" # Execute the command
-    return $?
+    dispatch "$@";
+    return $?;
   }
 
+# --- Usage ---
 
-  # @lbl usage
   usage(){
-    # This function prints the usage/help text using a here-document.
     cat << EOF >&2
   ${b}PKGFX [command] [options] ${x}
 
@@ -210,14 +140,25 @@
   ${w2}[ Flags ]${x}
 
   ${o}${ff} [-d] debug${x}, ${o}${ff} [-t] trace${x}, ${o}${ff} [-q] quiet${x}, ${o}${ff} [-y] yes${x}, ${o}${ff} [-f] force${x}, ${o}${ff} [-D] dev${x}
+  ${o}${ff} [--installed|-i]${x} - Used with 'list' to show only installed packages.
 EOF
   }
 
+# --- Entry Point ---
 
-# --- MAIN EXECUTION ---
-# This block ensures the script runs when executed, but not when sourced.
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  orig_args=("${@}")
-  main "${orig_args[@]}"
-  exit $?
-fi
+  if [ "$0" = "-bash" ]; then
+    :
+  else
+
+    # options is called by boot now
+
+    # Filter out flags to get positional arguments for main().
+    args=()
+    for arg in "${SELF_ARGS[@]}"; do
+      [[ "$arg" == -* ]] && continue;
+      args+=("$arg");
+    done
+
+    main "${args[@]}";
+
+  fi

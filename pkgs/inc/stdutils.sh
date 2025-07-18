@@ -215,8 +215,6 @@ if ! _index=$(is_lib_registered "LIB_STDUTILS"); then
 #-------------------------------------------------------------------------------
 
 else
-
   error "Library LIB_STDUTILS found at index [$_index]";
-  exit 1;
-
+  return 1;
 fi
