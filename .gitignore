@@ -11,5 +11,7 @@ GEMINI*
 .git
 .bak
 tmp/
+*.tmp
+*.gem
 .notes
 *.orig
