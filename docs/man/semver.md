@@ -1,4 +1,4 @@
-# FX-SEMVER(1) Script for Semantic Versioning and Git Operations
+key# FX-SEMVER(1) Script for Semantic Versioning and Git Operations
 
 ## Overview
 

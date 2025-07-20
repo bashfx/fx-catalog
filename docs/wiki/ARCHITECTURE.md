@@ -133,7 +133,7 @@ This section covers the low-level "grammar" of a BashFX script: how things are n
 
     *   **`usage()`:** The function that displays detailed help text to the user. It typically finds and prints a "Block Hack" (e.g., a `#### usage ####` block) from within the script's own source code.
 
-    *   **`inspect()`:** A pragmatic self-analysis tool. When a full `usage()` is not yet written, this function parses the script's source to list available commands, often by finding functions that match a `do_*` or `fx_*` pattern.
+    *   **`inspect()`:** A pragmatic self-analysis tool. When a full `usage()` is not yet written, this function parses the script's source to list available commands, often by finding functions that match a `do_*` or `fx_*` pattern. (OPTIONAL - inspect is becoming a general function and thus does not need to be implemented for compliance).
 
     *   **`dev_*()`:** A dedicated namespace for functions intended for development and testing. These are used to test specific sub-features, run diagnostics, or gate access to potentially destructive operations not meant for general use.
 
@@ -142,37 +142,57 @@ This section covers the low-level "grammar" of a BashFX script: how things are n
 		- **Output UX**. a suite of standardized printing utilitties, escapes and functions has historically been embedded into legacy standalone  scripts and is now being standardized into libraries: *stderr.sh* and *escape.sh* 
 		  
 		- *Functionality*. The mainline functions of *stderr.sh* include a simple `stderr()` function, a suite of log-level like functions wrapping the stderr stream via printf, and other UX visualization like borders lines and boxes, and confirmation prompts. *escape.sh* features a curated set of 256-color escape codes and glyphs for use with the various printer symbology. 
+
+		- *Silenceability*. All printer/log type functions have a degree of QUIET(n) which controls when they can or cannot render to screen stderr. They are generally controlled through option flags like `opt_debug` or `opt_trace` or environment variables like `QUIET_MODE` and `DEBUG_MODE`. At its core, sets of log_levels can be controlled together, where others have to be enabled explicitly. A log message is considered level-N if it is visible at Level N. For example, at Level-0 no log messages are visible.
 			
-		  Log level like functions include:
-			- Baseline (default level)
+			- Absolute Silence: QUIET(0) 
+				Means absolutely no screen output whatsoever! With this setting only on the return codes provide any sort of output. Further, QUITE(0) can only be achieved through overrides with higher specificity than `QUIET_MODE` which controls level 2 and higher. 
+			
+			- Default: QUIET(1)
+				Default level for any script/command/utility, unless the script overrides default levels for specific problem sets. This level corresponds to the display of: `stderr error fatal`. These messages are considered unsilenceable at level 1, with the exception of `log` which can be silenced with a `QUIET_MODE` but unlike level-2 messages, is enabled on level 1 by default.
+
+				These core printer functions cannot be silenced through options or environment variables, without absolute silence:
+
+				- *stderr* - the base printer that sends whatever comes in, out to stderr stream; it is wrapped by other printer functions.
 				- *error* - a state guard was triggered.
 				- *fatal* - similar to error but calls exit 1.
-				  
-			- Standard Set (first level `-d`)
+
+				The first silencable printer for level 1. 
+				- *log*    - unstyled message printer. 
+
+
+			- Standard Set:	QUIET(2) allows:
+				(second level `-d`)
 				- *warn* - imperfect state but trivial or auto recoverable.
 				- *info* - usually a sub-state change message.
 				- *okay*  - main path success message.
 				- *recover* - the expected step failed but a recovery branch was available. Acts as recovery success message.
 
-			- Extended Set (second level `-t`)
+			- Extended Set: QUIET(3) allows: 
+				(third level `-t`) 
 				- *trace* - for tracing state progressing or function output
 				- *think* - for tracing function calls
-				  
-			- Extended Set (third level `-s`)
-				- *silly* - for ridiculous log flagging and dumping of files when things arent working as expected.
-				  
-			- Dev Mode Set (fourth level `-D`)
-				- *log_dev* - dev only messages used in conjuction with `dev_required()`.
 
-			- Additional custom loggers can be created and attached to the  level-specific option flag.
-				  
-			- The first level and above follow typical loglevel usage, but currently only supports on/off gating with opt_debug and opt_quiet. Error messages can never be silenced.
-			  
-			- The second level and above set must be enabled explicitly, via `opt_trace`, `opt_silly` and `opt_dev`. 
-			  
-			- All of the loglevel messages are colored with a glyph prefix. If no styling is desired use the `stderr()`
-			  
-		- Standardized `NO_COLOR` global var is slowly being integrated for portability.
+			- Explicit toggles Set: QUIET(4)
+
+				Extra or Custom log printers can optionally be set to listen to explicit flags for enabling, and can pierce through to level 1. This helps when looking for particular markers or status in a long list of messages. A level 4 switch `SILLY_MODE` is provided for controlling all level 4 type messages.
+
+				- Extended Set (fourth level `-s`)
+					- *silly* - for ridiculous log flagging and dumping of files when things arent working as expected.
+						
+				- Dev Mode Set (fourth level `-D`)
+					- *log_dev* - dev only messages used in conjuction with `dev_required()`.
+
+
+			- Other General Notes:
+
+				- Additional custom loggers can be created and attached to the level-specific option flag.
+						
+				- Log levels are not granular in BashFX as might be the case in typical log-level semantics. Except for custom loggers that set must be enabled explicitly, via options like `opt_trace`, `opt_silly` and `opt_dev`. 
+					
+				- All of the loglevel messages are colored with a glyph prefix. If no styling is desired use the `stderr or log`
+					
+				- Standardized `NO_COLOR` global eventually supported.
 
 *   **7. Standard Patterns:** 
 	* **Proper Script**. A fully self-contained script that implements the BashFX Standard Interface (set of functions), and supports the Standard Patterns (especially XDG+), as needed. As the library and standard patterns are further cleaned up, the definition of proper script may expand. Proper here implying that a script is fully featured and compatible with the BashFX framework. 
@@ -188,6 +208,8 @@ This section covers the low-level "grammar" of a BashFX script: how things are n
 			- `$HOME/.local/etc` - configuration files go here ceremoniously because I often forget that `.config` even exists, and so I refuse to use it.
 			- `$HOME/.local/data` - meant for data libaries like db files, dictionaries, reference jsons, which has a different usecase than `.cache`.
 			- `$HOME/.local/bin` - a script is considered installed if its alias-ly linked to a location in the local
+			- `$HOME/.cache/tmp` - local temporary folder to use instead of `\tmp`
+			- `$HOME/.local` - generally considered `$XDG_HOME` especially in stdfx library functions for resolving xdg+ paths.
 			- I'm not entirely convinced yet that ./local/state is different than .local/etc, so I have not adapted or ignored the use of XDG state yet.
 			  
 	- **Embedded Docs**. I refer to as comment hacks.  A super pattern of BashFX is to direclty include inert meta information, templates, and documentation within the comments of a script, either as a lined sentinel or a block denoted by senintel pairs. As comments, these sections are out-of-scope unless the activating scripts are applied to them. In limited situations they may invoke a dangerous `eval`, but only with filters and escaping for security. This is to prevent errant rimraf all type commands from executing. Otherwise simple `sed` and `awk` parsing pull out the important bits.

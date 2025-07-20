@@ -26,6 +26,10 @@ if ! _index=$(is_lib_registered "LIB_STDUTILS"); then
 # Utils
 #-------------------------------------------------------------------------------
 
+# width=$(tput cols 2>/dev/null || echo 80);
+
+
+
   deref_var() {
     local __varname="$1"
     [[ "$__varname" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || return 1;

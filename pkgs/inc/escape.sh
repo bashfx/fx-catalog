@@ -31,23 +31,23 @@ if ! _index=$(is_lib_registered "LIB_ESCAPE"); then
 
   # Use hardcoded ANSI escape sequences for performance and portability.
   # The $'\...' syntax tells Bash to interpret the escape codes.
-  red2=$'\x1B[38;5;197m';
-  red=$'\x1B[31m';
-  orange=$'\x1B[38;5;214m';
-  yellow=$'\x1B[33m';
+  readonly  red2=$'\x1B[38;5;197m';
+  readonly  red=$'\x1B[31m';
+  readonly  orange=$'\x1B[38;5;214m';
+  readonly  yellow=$'\x1B[33m';  
 
-  green=$'\x1B[32m';
-  blue=$'\x1B[36m';
-  blue2=$'\x1B[38;5;39m';
-  cyan=$'\x1B[38;5;14m';
-  magenta=$'\x1B[35m';
+  readonly  green=$'\x1B[32m';
+  readonly  blue=$'\x1B[36m';
+  readonly  blue2=$'\x1B[38;5;39m';
+  readonly  cyan=$'\x1B[38;5;14m';
+  readonly  magenta=$'\x1B[35m';  
 
-  purple=$'\x1B[38;5;213m';
-  purple2=$'\x1B[38;5;141m';
-  white=$'\x1B[38;5;248m';
-  white2=$'\x1B[38;5;15m';
-  grey=$'\x1B[38;5;244m';
-  grey2=$'\x1B[38;5;240m';
+  readonly  purple=$'\x1B[38;5;213m';
+  readonly  purple2=$'\x1B[38;5;141m';
+  readonly  white=$'\x1B[38;5;248m';
+  readonly  white2=$'\x1B[38;5;15m';
+  readonly  grey=$'\x1B[38;5;244m';
+  readonly  grey2=$'\x1B[38;5;240m';
 
 
   revc=$'\x1B[7m';   # Reverse video

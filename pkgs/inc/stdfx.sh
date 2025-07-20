@@ -40,6 +40,12 @@ if ! _index=$(is_lib_registered "LIB_STDFX"); then
     [[ -n "${1//[[:space:]]/}" ]]
   }
 
+  # context chain from bookdb
+  is_chain(){
+    [[ "$1" == \@* || "$1" == \%* ]];
+    return $?;
+  }
+
 
   # must be "defined" and cannot be . or / or .. or // or : or  null, none, empty, undefined, or other values that might indicate an error in parsing
   # should support one or more input, if one fails it all fails

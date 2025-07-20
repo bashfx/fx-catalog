@@ -134,6 +134,39 @@ if ! _index=$(is_lib_registered "LIB_STDERR"); then
   __devbox(){   __printbox "$1" "red2" "none"; }
   
 
+  __banner() {
+      local text="$1"; local color="$2"; local fill_char="${3:--}"  width;
+
+      # Get terminal width, defaulting to 80 if tput is not available
+      width=$(tput cols 2>/dev/null || echo 80);
+
+      # The visible text block includes the text plus two spaces on each side
+      local text_block_len=$(( ${#text} + 4 ));
+
+      # If the text is wider than the screen, just print it centered and colored
+      if (( text_block_len >= width )); then
+          printf "\n%b%s%b\n" "${color}" "  ${text}  " "${C_RESET}" >&2;
+          return 0;
+      fi
+
+      # Calculate how many filler characters are needed
+      local total_filler_len=$((width - text_block_len));
+      local left_filler_len=$((total_filler_len / 2));
+      local right_filler_len=$((total_filler_len - left_filler_len));
+
+      # Build the left and right filler bars
+      # Using a loop for maximum portability (avoids issues with seq or brace expansion)
+      local left_bar=""
+      for ((i=0; i<left_filler_len; i++)); do left_bar="${left_bar}${fill_char}"; done
+      
+      local right_bar=""
+      for ((i=0; i<right_filler_len; i++)); do right_bar="${right_bar}${fill_char}"; done
+
+      # Print the final banner to stderr
+      # The structure is [left-bar][space][space][colored-text][space][space][right-bar]
+      printf "\n%s  %b%s%b  %s\n" "${left_bar}" "${color}" "${text}" "${C_RESET}" "${right_bar}" >&2
+  }
+
 
   xline(){ stderr "${blue}${LINE}↯\n${x}"; }
 
