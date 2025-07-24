@@ -37,14 +37,84 @@ if ! _index=$(is_lib_registered "LIB_STDUTILS"); then
   }
 
   #update to take prefix as a paramter isntead of do_
-  do_inspect(){
-    declare -F | grep 'do_' | awk '{print $3}'
-    _content=$(sed -n -E "s/[[:space:]]+([^#)]+)\)[[:space:]]+cmd[[:space:]]*=[\'\"]([^\'\"]+)[\'\"].*/\1 \2/p" "$0")
-    __printf "$LINE\n"
-    while IFS= read -r row; do
-      info "$row"
-    done <<< "$_content"
-  }
+  # do_inspect(){
+  #   declare -F | grep 'do_' | awk '{print $3}'
+  #   _content=$(sed -n -E "s/[[:space:]]+([^#)]+)\)[[:space:]]+cmd[[:space:]]*=[\'\"]([^\'\"]+)[\'\"].*/\1 \2/p" "$0")
+  #   __printf "$LINE\n"
+  #   while IFS= read -r row; do
+  #     info "$row"
+  #   done <<< "$_content"
+  # }
+
+
+################################################################################
+#
+#  __print_in_columns (Low-Ordinal Helper)
+#
+################################################################################
+# Description: Reads a list from stdin and formats it into fixed-width columns.
+# Arguments:
+#   1: num_cols (integer) - The number of columns to print.
+#   2: col_width (integer) - The width of each individual column.
+# Returns: 0.
+__print_in_columns() {
+    local num_cols="$1";
+    local col_width="$2";
+    local -a items=();
+    
+    mapfile -t items
+
+    local count=${#items[@]};
+    if [[ $count -eq 0 ]]; then return 0; fi
+
+    # THE FIX: Remove the explicit `\n` from the format string.
+    # The `printf` in the loop will now only print the formatted row,
+    # and the calling context (or the implicit newline from the command
+    # substitution ending) will handle the line break.
+    local format_string="";
+    for ((i=0; i<num_cols; i++)); do
+        format_string+="%-*s ";
+    done;
+
+    for ((i=0; i<count; i+=num_cols)); do
+        local -a row_args=();
+        for ((j=0; j<num_cols; j++)); do
+            row_args+=("$col_width" "${items[i+j]:-}");
+        done;
+        # We add the newline here, outside the format string, for clarity and control.
+        printf -- "${format_string}\n" "${row_args[@]}";
+    done;
+    return 0;
+}
+
+
+
+
+do_inspect(){
+  info "Available Commands (from dispatch):";
+  
+  # The sed command here is a simplified version to extract just the command.
+  # The final pipe to `pr` does the column formatting.
+  sed -n '/dispatch()/,/esac/p' "$0" \
+    | grep -oE '^\s*\(([^)]+)\)' \
+    | sed 's/[()]/ /g' \
+    | tr '|' '\n' \
+    | awk '{$1=$1;print "  "$0}' \
+    | sort -u \
+    | __print_in_columns 4 20;
+
+  line;
+  
+  info "Available Functions (by prefix):";
+  declare -F \
+    | awk '{print $3}' \
+    | grep -E '^(do_|dev_|is_)' \
+    | sed 's/^/  /' \
+    | sort \
+    | __print_in_columns 4 20;
+
+  return 0;
+}
 
 
   # Removes leading and trailing whitespace from a string and prints the result.

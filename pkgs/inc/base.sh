@@ -329,12 +329,22 @@
 #-------------------------------------------------------------------------------
 # Micro Lib Utilities
 #-------------------------------------------------------------------------------
-
   ls_funcs(){
     local this_file="$1";
+    if [[ ! -f "$this_file" ]]; then
+      error "File not found: ${this_file}";
+      return 1;
+    fi;
+    
+    # 1. Find all lines that look like function definitions.
+    # 2. Filter out any commented-out or sourced lines.
+    # 3. Use `sed` to extract only the function name.
+    # 4. Sort the results to ensure a unique list.
     grep -E '^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(\)[[:space:]]*\{' "$this_file" \
       | grep -vE '^[[:space:]]*(#|source|\.)' \
-      | sort -u;
+      | sed -E 's/^[[:space:]]*([a-zA-Z_][a-zA-Z0-9_]*).*/\1/' \
+    
+    return 0;
   }
 
 

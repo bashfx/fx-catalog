@@ -26,32 +26,16 @@
     return 1;
   }
 
+## HMM IS THIS BROKEN??
 
-			save_rc_file(){
+	save_rc_file(){
     local rc ret src=$1 dest=$2 lbl=$3; #src has embedded doc
     trace "save rc file args (src=$1) (dest=$2) (lbl=$3)";
 
     # Ensure directory exists
     mkdir -p "$(dirname "$dest")" || { error "Failed to create directory for rc file: $(dirname "$dest")"; return 1; }
 
-    # Write the content directly
-    cat << EOF > "$dest" || { error "Failed to write to rc file: $dest"; return 1; }
-# ${shebang}
-# 
-# # ${LINE}
-# # Updated: $(date)
-#
-export FX_INSTALLED=0;
-export FX_APP_NAME='fx';
-export FX_PROFILE="$FX_PROFILE";
-export FX_BIN="$FX_BIN";
-export FX_LIB="$FX_LIB";
-export FX_INC="$FX_INC";
-export FX_ETC="$FX_ETC";
-export FX_DATA="$FX_DATA";
-export FX_STATE="$FX_STATE";
-export FX_RC="$FX_ETC/fx.rc";
-EOF
+    #MISSING -> SUPPOSED TO GET EMBEDDED DOC HERE BASED ON LABEL!
 
     if is_empty_file "$dest"; then
       warn "File is empty or whitespace only!";

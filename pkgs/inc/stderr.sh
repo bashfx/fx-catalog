@@ -69,6 +69,9 @@ if ! _index=$(is_lib_registered "LIB_STDERR"); then
     esac
   }
 
+  stderr(){ [ -z "$QUIET_MODE" ] && [ -z "$QUIET_BOOT_MODE" ] &&  printf "%b" "${1}${xx}\n" 1>&2; }
+
+
   recover() { __log recov  "$1" "${2:-1}"; }
   warn()  { __log warn  "$1" "${2:-1}"; }
   okay()  { __log okay  "$1" "${2:-1}"; }
