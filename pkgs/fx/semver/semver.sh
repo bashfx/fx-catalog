@@ -704,6 +704,48 @@
     #fi
   }
 
+
+  do_new_compare_vers() {
+      # Easy case: versions are identical
+      if [[ "$1" == "$3" ]]; then
+          case "$2" in
+            '='|'=='|'>='|'<=') return 0 ;;
+            *) return 1 ;;
+          esac
+      fi
+
+      # Split versions into arrays using '.' as a delimiter
+      local OLD_IFS="$IFS"
+      IFS='.'
+      local -a v1=($1) v2=($3)
+      IFS="$OLD_IFS"
+
+      # Find the longest version array to iterate through
+      local i
+      local len1=${#v1[@]}
+      local len2=${#v2[@]}
+      local max_len=$(( len1 > len2 ? len1 : len2 ))
+
+      # Compare each component numerically
+      for ((i = 0; i < max_len; i++)); do
+          # Pad missing components with 0
+          local c1=${v1[i]:-0}
+          local c2=${v2[i]:-0}
+
+          if (( c1 > c2 )); then
+              case "$2" in '>'|'>='|'!=') return 0 ;; *) return 1 ;; esac
+          fi
+          if (( c1 < c2 )); then
+              case "$2" in '<'|'<='|'!=') return 0 ;; *) return 1 ;; esac
+          fi
+      done
+
+      # If we get here, they are equal component-by-component
+      case "$2" in '='|'=='|'>='|'<=') return 0 ;; *) return 1 ;; esac
+  }
+
+
+
   do_retag(){ 
 
     local tag=$1
@@ -1074,6 +1116,7 @@
 
   dispatch(){
     local call="$1" arg="$2" arg2="$3" cmd= ret=0;
+    shift; #shift call
     case $call in
       #run)      cmd='do_echo';; #doesnt work on mac
       test)      cmd='do_test_semver';;
@@ -1087,6 +1130,7 @@
       remote)    cmd='do_latest_remote';;
       upst*)     cmd='do_remote_compare';;
       rbc*)      cmd='do_rbuild_compare';;
+      comp*)     cmd='do_new_compare_vers';;
       tags)      cmd='do_tags';;
       chg)       cmd='do_change_count';;
       auto)      cmd='do_auto';;
@@ -1099,7 +1143,7 @@
       snip)      cmd='do_snip';;
       info)      cmd='do_info';;
       next|dry)  cmd='do_bump';;
-      bump)      cmd='do_bump'; arg=0; ;;
+      bump)      cmd='do_bump'; arg=0; shift; ;;
       help)      cmd='usage';;
       *)
         if [ ! -z "$call" ]; then
@@ -1108,14 +1152,15 @@
           usage
         else
           #err="Missing command!";
-          do_latest_semver
+          do_latest_semver;
         fi
       ;;
     esac
 
 
     if [ -n "$cmd" ]; then
-      $cmd "$arg" "$arg2"; ret=$?;
+      #$cmd "$arg" "$arg2"; ret=$?;
+      $cmd "${@}"; ret=$?; # if something breaks probably here
       return $ret;
     fi
 

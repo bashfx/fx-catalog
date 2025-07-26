@@ -304,6 +304,16 @@ if ! _index=$(is_lib_registered "LIB_STDERR"); then
     fi
   }
 
+  __ask(){
+    local msg="$1" default="$2"
+     if [ "${opt_yes:-1}" -eq 1 ]; then # Only prompt if opt_yes is NOT 0 (i.e., not auto-yes)
+      read -p "$msg --> " answer
+      [ -n "$answer" ] && echo "$answer" || echo "$default"
+    else # If opt_yes is 0 (auto-yes), just return the default
+      echo "$default"
+    fi
+  }
+
   prompt_path(){
       local res ret next
       prompt="$1"
@@ -390,6 +400,94 @@ if ! _index=$(is_lib_registered "LIB_STDERR"); then
       ## TODO...
     done
   }
+
+
+substring_filter(){
+	local pattern=$1
+	[[ $pattern == "all" ]] && pattern="*";
+	if [[ -z "$pattern" ]]; then
+			echo "Error: No pattern provided to substring_filter." >&2;
+			return 1
+	fi
+	while IFS= read -r line; do
+		if [[ "$line" == *"$pattern"* ]]; then
+				echo "$line"
+		fi
+	done
+}
+
+
+# Filters a stream of text, supporting multiple inclusion and exclusion patterns.
+#
+# Usage:
+#   ... | substring_filter "foo" "bar"     # OR: Prints lines containing "foo" OR "bar"
+#   ... | substring_filter "!foo" "!bar"    # AND: Prints lines containing NEITHER "foo" NOR "bar"
+#   ... | substring_filter "foo" "!bar"   # Prints lines containing "foo" AND NOT "bar"
+#   ... | substring_filter              # With no args, prints all lines (like 'cat')
+#
+substring_super_filter() {
+    # If no patterns are given, just print everything and exit.
+    if [[ $# -eq 0 ]]; then
+        cat
+        return
+    fi
+
+    # --- 1. Argument Parsing: Sort patterns into include/exclude arrays ---
+    local -a includes=()
+    local -a excludes=()
+    for arg in "$@"; do
+        if [[ "$arg" == "!"* ]]; then
+            # Add to excludes list, removing the leading '!'
+            excludes+=("${arg#!}")
+        else
+            # Add to includes list
+            includes+=("$arg")
+        fi
+    done
+
+    # --- 2. Main Filtering Loop ---
+    while IFS= read -r line; do
+        local is_excluded=false
+        local is_included=false
+
+        # --- Rule A: Check for Exclusions (AND logic) ---
+        # The line must NOT match ANY exclusion pattern.
+        for pattern in "${excludes[@]}"; do
+            if [[ "$line" == *"$pattern"* ]]; then
+                is_excluded=true
+                break # Found a reason to exclude, no need to check further.
+            fi
+        done
+
+        # If the line is excluded, skip it immediately.
+        if "$is_excluded"; then
+            continue
+        fi
+
+        # --- Rule B: Check for Inclusions (OR logic) ---
+        # If we get here, the line was not excluded.
+        # Now, does it meet the inclusion criteria?
+
+        # If there are no inclusion patterns, then any non-excluded line is a match.
+        if (( ${#includes[@]} == 0 )); then
+            is_included=true
+        else
+            # Otherwise, the line must match AT LEAST ONE inclusion pattern.
+            for pattern in "${includes[@]}"; do
+                if [[ "$line" == *"$pattern"* ]]; then
+                    is_included=true
+                    break # Found a reason to include, no need to check further.
+                fi
+            done
+        fi
+
+        # If the line passed both exclusion and inclusion checks, print it.
+        if "$is_included"; then
+            echo "$line"
+        fi
+    done
+}
+
 
 #-------------------------------------------------------------------------------
 # Load Guard Error

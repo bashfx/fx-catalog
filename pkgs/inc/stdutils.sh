@@ -270,6 +270,161 @@ do_inspect(){
   }
 
 
+
+
+#-------------------------------------------------------------------------------
+# @is_array
+#-------------------------------------------------------------------------------
+	is_array(){
+		identify;
+		local var_name="$1"
+
+		# An empty string is not a valid variable name.
+		[[ -z "$var_name" ]] && return 1;
+
+		# Use 'declare -p' to check the variable's attributes.
+		# The regex looks for 'declare -a' (indexed) or 'declare -A' (associative).
+		# We redirect stderr to hide the "not found" error from declare.
+		[[ $(declare -p "$var_name" 2>/dev/null) =~ ^declare\ -[aA] ]] && return 0;
+		return 1;
+	}
+
+
+
+
+
+#-------------------------------------------------------------------------------
+# @array_len
+#-------------------------------------------------------------------------------
+	array_len(){
+		identify;
+		local var_name="$1";
+		# Use our robust is_array function to validate.
+		if ! is_array "$var_name"; then
+				warn "'$var_name' is not an array. Cannot get length.";
+				return 1;
+		fi
+		# Create a nameref to the actual array.
+		local -n arr_ref="$var_name";
+		# Echo the length.
+		echo "${#arr_ref[@]}";
+		return 0;
+	}
+
+
+#-------------------------------------------------------------------------------
+# @is_empty_array
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+# @is_empty_array
+#-------------------------------------------------------------------------------
+	is_empty_array(){
+		identify;
+		local var_name="$1"
+
+		# It can't be an empty array if it's not an array at all.
+		! is_array "$var_name" && return 1;
+		
+		# Create a nameref to get the length.
+		local -n arr_ref="$var_name"
+
+		[[ ${#arr_ref[@]} -eq 0 ]] && return 0 # Is an empty array
+		return 1;
+	}
+
+
+
+
+#-------------------------------------------------------------------------------
+# @array_from_glob
+#-------------------------------------------------------------------------------
+# used mostly for globbing files in a directory
+# usage:
+# 		 | > declare -a my_array
+# 		 | > array_from_glob "${DIR}/*.file" my_array
+
+	array_from_glob() { 
+		local glob_pattern="$1"; # The glob pattern as a string local -n 
+		target_array="$2"; # Nameref to the array to be populated 
+		# Use the glob pattern directly to populate the array 
+		target_array=( $glob_pattern ); # Shell will expand $glob_pattern here
+	}
+
+
+#-------------------------------------------------------------------------------
+# @stream_array
+#-------------------------------------------------------------------------------
+	# converts an array to a pipeable stream via namerefs
+	# usage: 
+	# 		 | > stream_array arr | filter
+	stream_array() {
+		# The first argument is the STRING NAME of the array.
+		local array_name="$1";
+
+		# --- VALIDATION (using the name) ---
+		# First, check if the variable with this name is actually an array.
+		# This check is performed on the NAME, not the content.
+		if [[ ! "$(declare -p "$array_name" 2>/dev/null)" =~ ^declare\ -[aA] ]]; then
+			error "Error: stream_array expects the name of an array as its argument." >&2;
+			return 1;
+		fi
+
+		# --- PROCESSING (using the nameref) ---
+		# Now that we know it's a valid array name, create the nameref for easy access.
+		local -n arr_ref="$array_name";
+
+		# Stream producer - this part was already correct.
+		printf "%s\n" "${arr_ref[@]}";
+	}
+
+
+		#-------------------------------------------------------------------------------
+# @array_diff
+#-------------------------------------------------------------------------------
+		# Calculates the set difference of two arrays (array1 - array2).
+		# Usage: array_diff <array1_name> <array2_name> <result_array_name>
+		array_diff(){
+			local -n arr1=$1;
+			local -n arr2=$2;
+			local -n result=$3;
+
+			local -A to_remove_map
+			for item in "${arr2[@]}"; do
+				if [[ -n "$item" ]]; then
+					to_remove_map[$item]=1;
+				fi
+			done
+
+			result=();
+			for item in "${arr1[@]}"; do
+				if [[ ! -v to_remove_map[$item] ]]; then
+					result+=("$item");
+				fi
+			done
+		}
+
+#-------------------------------------------------------------------------------
+# @filters - Stream Test Functions. Do not Delete.
+#-------------------------------------------------------------------------------
+
+	#-------------------------------------------------------------------------------
+# @noop_filter
+#-------------------------------------------------------------------------------
+	noop_filter(){
+		while IFS= read -r line; do
+			echo "cat: $line";
+		done
+	}
+
+	#-------------------------------------------------------------------------------
+# @noop_cat_filter
+#-------------------------------------------------------------------------------
+	noop_cat_filter(){
+		info "catting";
+		cat
+	}
+
+
   find_repos(){
     think "Finding repo folders..."
     warn "This may take a few seconds..."
@@ -283,6 +438,95 @@ do_inspect(){
     eval "$cmd" #TODO:check if theres a better way to do this
   }
 
+
+
+	super_substring_filter(){
+			if [[ $# -eq 0 ]]; then cat; return 0; fi
+
+			local -a includes=() excludes=() exact_include=() exact_exclude=()
+			local ALL_MODE=1 found_match=false; # <--- 1. DECLARE FLAG
+
+			for arg in "$@"; do
+				case "$arg" in
+					('!#'*) exact_exclude+=("${arg#!#}"); ;;
+					('!'*)  excludes+=("${arg#!}");       ;;
+					('#'*)  exact_include+=("${arg#\#}"); ;;
+					('%'*)  includes+=("${arg#\%}");      ;;
+					('*'*)  ALL_MODE=0;           ;; #include only
+					(*) includes+=("${arg#\%}");  ;;
+				esac
+			done
+
+			while IFS= read -r line; do
+
+				if [ "$ALL_MODE" -eq 1 ]; then
+					local is_excluded=false
+					for p in "${exact_exclude[@]}"; do [[ "$line" == "$p" ]] && { is_excluded=true; break; }; done
+					if ! "$is_excluded"; then
+						for p in "${excludes[@]}"; do [[ "$line" == *"$p"* ]] && { is_excluded=true; break; }; done
+					fi
+					if "$is_excluded"; then continue; fi
+
+					local is_included=false
+					if (( ${#exact_include[@]} == 0 && ${#includes[@]} == 0 )); then
+						is_included=true;
+					else
+						for p in "${exact_include[@]}"; do [[ "$line" == "$p" ]] && { is_included=true; break; }; done
+						if ! "$is_included"; then
+							for p in "${includes[@]}"; do [[ "$line" == *"$p"* ]] && { is_included=true; break; }; done
+						fi
+					fi
+				else
+					#include everyting
+					is_included=true;
+				fi
+
+
+				if "$is_included"; then
+					found_match=true # <--- 2. SET FLAG ON SUCCESS
+					echo "$line"
+				fi
+			done
+
+			# --- 3. FINAL CHECK ---
+			if ! "$found_match"; then
+				# error "Filter produced no matches." >&2
+				return 1
+			fi
+	}
+
+#-------------------------------------------------------------------------------
+# @fruit - start a new basefile
+#-------------------------------------------------------------------------------
+
+
+
+	BASE_LIST=(apple banana cherry durian elder fig guava honeydew\
+						imbe jackfruit kiwi lime mango orange pineapple\
+						quince raspberry strawberry tangerine uglifruit\
+						vanilla watermelon xigua yuzu zucchini);
+
+
+	random_pick_array(){
+		identify;
+		# Use a nameref to refer to the array passed by name.
+		local -n arr=$1
+
+		# Handle the edge case of an empty array to prevent a division-by-zero error.
+		if (( ${#arr[@]} == 0 )); then
+				echo "Error: Array is empty." >&2
+				return 1
+		fi
+
+		# Pick a random index from 0 to (size - 1) and echo the element.
+		local pick="${arr[$((RANDOM % ${#arr[@]}))]}" #adds pid for unique
+		
+		[ -n "$pick" ] && pick="${pick}_$$";
+		[ -z "$pick" ] && pick="book_$$";
+		 echo "$pick";
+
+		return 0;
+	}
 
 #-------------------------------------------------------------------------------
 # Load Guard Error
