@@ -1,34 +1,74 @@
 #!/usr/bin/env bash
-#===============================================================================
 
 
+
+    ARGS=("${@}");
     #MORE_GLYPHS="☾☀︎⚁⚂⚅⚀☉✙✚✜♱⚙︎☩⚝☘︎⚑⚐☸︎🀸∇∞÷×∑∬≋&⊛⋈⊛⋒⋓⋐⋑⨂⨹⨺⨻⩏⩛⩚⩓⟡⨳⩩⫷⫏⟐⟑⫶⟡⧊⧇⧈⧗⧖𝒆𝚫𝚲𝜟𝜳𝜰Ω℉℃₵¢€$▽△★☆✕✖︎✓✔︎❁✿✘✰✣☑︎☒◉⦿⇒➲⟿⇪⇧↩︎⟳↻⤬⥰⥼☻☺︎✍︎✌︎♈︎♂︎⚔︎⚉"
     #MORE_GLYPHS2="⟿⟼☈☇☁︎⛵︎⚾︎✄♒︎♌︎♋︎♇⚕︎⚚§₽⨏⨍⨘⨜∏∽∾∿≈⋇⧚⧛⧍⧋⧌⧨⧪⅀𝞹𝝿𝝨𝝱𝝰𝝲𝝳𝝷𝝵𝝺𝞃𝞇𝞅𝞈𝚲𝕭⦼⦼⦻⦜⦛⦝⦨⫎⫐☈♜♛♚☕︎♌︎"
-    ##☾⚯⚮⚭⚬☌⚲☉☍⚭∘∷∴⊚◎◉⦿◦✱❈※❆✻
+    ##☾⚯⚮⚭⚬☌⚲☉☍⚭∘∷∴⊚◎◉⦿◦✱❈※❆✻߷⚿⟐⮧
 
 
+    invert='\e[7m';
+    italic='\e[3m';
+
+
+    deep=$'\x1B[38;5;61m';
+    deep_green=$'\x1B[38;5;60m';
+
+    red3=$'\x1B[38;5;197m';
     red2=$(tput setaf 1)
     red=$(tput setaf 9)
-    yellow=$(tput setaf 11)
-    orange=$(tput setaf 214)
-    green=$(tput setaf 41)
-    blue=$(tput setaf 39)
-    blue2=$(tput setaf 12)
-    cyan=$(tput setaf 123)
-    purple=$(tput setaf 213)
-    grey=$(tput setaf 244)
-    grey2=$(tput setaf 240)
-    white=$(tput setaf 15)
-    white2=$(tput setaf 248)
+    yellow=$'\x1B[33m';
+    orange=$'\x1B[38;5;214m';
+    orange2=$'\x1B[38;5;221m';
+    green3=$(tput setaf 41)
+    green2=$'\x1B[38;5;156m';
+    green=$'\x1B[38;5;10m';
+    magenta=$'\x1B[35m';
+    blue=$'\x1B[36m';
+    blue2=$'\x1B[38;5;39m';
+    cyan=$'\x1B[38;5;51m';
+    purple=$'\x1B[38;5;213m';
+    purple2=$'\x1B[38;5;141m';
+    grey=$'\x1B[38;5;242m';
+    grey2=$'\x1B[38;5;240m';
+    grey3=$'\x1B[38;5;237m';
+    white=$'\x1B[38;5;247m';
+    white2=$'\x1B[38;5;15m';
 
     LINE="$(printf '%.0s-' {1..54})";
     LINE2="$(printf '%.0s-' {1..80})";
     LINE3="$(printf '%.0s-' {1..30})";
 
+    fail=$'\u2715';
+    pass=$'\u2713';
+    recv=$'\u27F2';
+
+    uclock=$'\u23F1'    # ⏱
+    uclock2=$'\u23F2'   # ⏲
+    uhour=$'\u29D6'     # ⧖ 
+    udate=$'\u1F5D3'    # 🗓
+    gear=$'\u26ED'     # ⛭ gear
+    rook=$'\u265C'     # ♜ rook
+    pawn=$'\u265F'     # ♟ pawn
+    king=$'\u26ED'     # ♕ queen/crown
+    vtri=$'\u25BD'     # ▽ down triangle
+    utri=$'\u25B3'     # △ up triangle <-- delta
+    xmark=$'\u292C'    # ⤬ heavy cross
+    sword=$'\u2694'    # ⚔︎ crossed swords
+    moon=$'\u263E'     # ☾ crescent moon
+    sun=$'\u2600'      # ☀︎ sun
+    snow=$'\u273B'    # ✻ snowflake/star
+    colon2=$'\u2237'   # ∷ double colon
+    theref=$'\u2234'   # ∴ therefore
+    bull=$'\u29BF'     # ⦿ circled bullet
+    sect=$'\u00A7'     # § section symbol
+    bowtie=$'\u22C8'   # ⋈ bowtie
+
     lambda="\xCE\xBB"
     line="$(sed -n '2,2 p' $BASH_SOURCE)$nl"
     bline="$(sed -n '3,3 p' $BASH_SOURCE)$nl"
-    x=$(tput sgr0)
+    xx=$'\x1B[0m';
     sp="   "
     tab=$'\t'
     nl=$'\n'
@@ -43,36 +83,14 @@
     darr="\u21B3"
     uarr="\u21B0"
     delim='\x01'
+    ulock=$'\u26BF'
+    boto=$'\u232C'
     delta='\xE2\x96\xB3'
-    pass='\xE2\x9C\x93'
-    fail='\xE2\x9C\x97'
-    dots='\xE2\x80\xA6'   
+    #pass='\xE2\x9C\x93'
+    #fail='\xE2\x9C\x97'
+    dots='\xE2\x80\xA6'
     bolt="\xE2\x86\xAF"
     redo='\xE2\x9F\xB3'
-
-    vtri=$'\u25BD'     # ▽ down triangle
-    utri=$'\u25B3'     # △ up triangle
-    xmark=$'\u292C'    # ⤬ heavy cross
-    sword=$'\u2694'    # ⚔︎ crossed swords
-    moon=$'\u263E'     # ☾ crescent moon
-    sun=$'\u2600'      # ☀︎ sun
-    spark=$'\u273B'    # ✻ snowflake/star
-    colon2=$'\u2237'   # ∷ double colon
-    theref=$'\u2234'   # ∴ therefore
-    bull=$'\u29BF'     # ⦿ circled bullet
-    sect=$'\u00A7'     # § section symbol
-    bowtie=$'\u22C8'   # ⋈ bowtie
-    sum=$'\u2211'      # ∑ summation
-    prod=$'\u220F'     # ∏ product
-    dharm=$'\u2638'    # ☸︎ dharma wheel
-    scroll=$'\u07F7'   # ߷ paragraphus / ornament
-    note=$'\u266A'     # ♪ music note
-    anchor=$'\u2693'   # ⚓ anchor
-    unlock=$'\u26BF'   # ⚿ unlocked padlock
-    spindle=$'\u27D0'  # ⟐ circled dash / orbital
-
-
-
     space='\x20'
     eol="$(tput el)"
     eos="$(tput ed)"
@@ -80,31 +98,36 @@
     bld="$(tput bold)"
     rvm="$(tput rev)"
 
-    #function stderr(){ printf "${@}${x}\n" 1>&2; }
-    function main(){
-      local text color prefix revc
-      text=${1:-}; color=${2:-grey}; prefix=${!3:-}; revc=${4:-}
-      [ -n "$revc" ] && revc=$rvm ||:
-      [ -n "$text" ] && printf "${!color}${prefix} ${revc}%b${x}\n" "${text}" 1>&2 || :
+    color_filter(){
+      local color_name="${1:-grey}";
+      local color_code=${!color_name};
+      local reset_code=${xx};
+      trap 'printf "%s" "${reset_code}"' EXIT;
+      printf "%s" "${color_code}";
+      cat
     }
 
+    stream_array() {
+      local array_name="$1";
+      if [[ ! "$(declare -p "$array_name" 2>/dev/null)" =~ ^declare\ -[aA] ]]; then
+        error "Error: stream_array expects the name of an array as its argument." >&2;
+        return 1;
+      fi
+      local -n arr_ref="$array_name";
+      printf "%s\n" "${arr_ref[@]}";
+    }
+
+    #function stderr(){ printf "${@}${x}\n" 1>&2; }
+    main(){
+      local text color prefix revc
+      text=${1:-}; color=${2:-grey}; prefix=${!3:-}; styl=${4:-}
+      [ -n "$styl" ] && styl=$rvm ||:
+      [ -n "$text" ] && printf "${styl}${!color}${prefix} %b${xx}\n" "${text}" 1>&2 || :
+    }
+
+  #stream_array ARGS |  pr -4 -t -s'|' | column -t -s'|' | list_filter  >&2;
 
 
-  #export GLYPH="\xE2\x9C\x93:\xE2\x9C\x97:\xE2\x96\xB3:\xCE\xBB:\xE2\x80\xA0:\xC2\xBB:\xE2\x94\x94:\xE2\x80\xA6:\xE2\x80\xBB"
-  #export GLYPH=(${GLYPH//:/ })
-
-
-  #dagger="\xE2\x80\xA0"
-  #mark="\xE2\x80\xBB" #\xE2\x96\x88
-  #dots="\xE2\x80\xA6"
-  #dash="${bl2}\xE2\x80\x95"
-  #delta="${orange}\xCE\x94"
-  #flecha="\xC2\xBB "
-  #square="\xE2\x95\x90" #\xE2\x96\xA1"
-  #hook="\xE2\x94\x94"
-  #flake="\xE2\x9D\x86"
-
-  
-#-------------------------------------------------------------------------------
+# --------------------------------------------------
 
   main "$@";

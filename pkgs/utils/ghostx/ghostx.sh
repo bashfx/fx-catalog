@@ -43,3 +43,9 @@ else
   # `unset -f` removes function definitions.
   unset -f ghost_mode_on ghost_mode_off ghost_mode_status 2>/dev/null
 fi
+
+#(cd /path/to/your/ && tar cf - .) | (cd /path/to/virtual/location/ && tar xf -)
+
+#rsync -ahv --progress --exclude='target' --exclude='node_modules' /data/dx/dev/repos $HOME/repos 
+
+#cp /data/dx/dev/repos $HOME/repos

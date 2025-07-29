@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+
+# Define your custom XDG paths
+XDG_ROOT_DIR="$HOME/.my"
+XDG_LOCAL_DIR="$HOME/.local"
+
+declare -A XDG_KEYS=(
+  [root]="XDG_ROOT_DIR"
+  [local]="XDG_LOCAL_DIR"
+  [desktop]="XDG_DESKTOP_DIR"
+  [downloads]="XDG_DOWNLOAD_DIR"
+  [templates]="XDG_TEMPLATES_DIR"
+  [public]="XDG_PUBLICSHARE_DIR"
+  [docs]="XDG_DOCUMENTS_DIR"
+  [music]="XDG_MUSIC_DIR"
+  [pics]="XDG_PICTURES_DIR"
+  [vids]="XDG_VIDEOS_DIR"
+  [dotfiles]="XDG_DOTFILES_DIR"
+  [config]="XDG_CONFIG_DIR"
+  [data]="XDG_DATA_DIR"
+  [plus_data]="XDG_MYDATA_DIR"
+  [cache]="XDG_CACHE_DIR"
+  [tmp]="XDG_TEMP_DIR"
+  [sync]="XDG_SYNC_DIR"
+)
+
+declare -A XDG_MAP=(
+  [root]="$XDG_ROOT_DIR"
+  [local]="$XDG_LOCAL_DIR"
+  [desktop]="$XDG_ROOT_DIR/wksp/desktop"
+  [downloads]="$XDG_ROOT_DIR/dowloads"
+  [templates]="$XDG_ROOT_DIR/docs/tmpl"
+  [public]="$XDG_ROOT_DIR/other/public"
+  [docs]="$XDG_ROOT_DIR/docs/documents"
+  [music]="$XDG_ROOT_DIR/media/audio"
+  [pics]="$XDG_ROOT_DIR/media/images"
+  [vids]="$XDG_ROOT_DIR/media/videos"
+  [dotfiles]="$XDG_ROOT_DIR/dotfiles"
+  [config]="$HOME/.config"
+  [data]="$XDG_LOCAL_DIR/share"
+  [plus_data]="$XDG_LOCAL_DIR/data"
+  [cache]="$HOME/.cache"
+  [tmp]="$HOME/.cache/temp"
+  [sync]="$XDG_ROOT_DIR/remote/sync"
+)
+
+# ========== Help ==========
+print_help() {
+  cat <<EOF
+Usage: xdg <command|key>
+
+Commands:
+  <key>        → Echo mapped custom XDG path (e.g. 'xdg docs')
+  ls           → Show all short code -> PATH mappings
+  lskey        → Show all short code -> KEY mappings
+  help         → This help message
+  info         → Show version/license info
+  key <KEY>    → Get the key associated with the short code
+  file         → Dumps the user-dirs.dirs file
+  nano         → Open ~/.config/user-dirs.dirs in \$EDITOR
+  update       → Run xdg-user-dirs-update to regenerate user-dirs.dirs
+  get <KEY>    → Print current value of system XDG key (e.g. XDG_DESKTOP_DIR)
+
+Examples:
+  xdg help
+  xdg info
+  xdg music
+  xdg list
+  xdg key <lookup>
+  xdg nano
+  xdg get XDG_DOWNLOAD_DIR
+  xdg file
+EOF
+}
+
+version(){
+  echo;
+  echo "XDG v1.0"
+  echo "---------"
+  echo "Utility script for resolving XDG and XDG+ path compliance."
+  echo; 
+  echo "(C) 2025 Qodeninja — All rights reserved"
+  echo "Dual Licensed:"
+  echo "  • Copyleft AGPL-3.0-or-later for personal, educational, and academic use"
+  echo "  • Commercial use requires licensing via https://github.com/qodeninja"
+  echo "This license applies globally to all Qodeninja/BashFX scripts."
+  echo
+  echo "This software is provided 'as-is' without warranties of any kind,"
+  echo "including but not limited to fitness for a particular purpose."
+  return 0
+}
+
+
+# ========== Builtin xdg wrappers ==========
+edit_user_dirs() {
+  ${EDITOR:-nano} "$HOME/.config/user-dirs.dirs"
+}
+
+normalize_xdg_key() {
+  local raw="$1"
+  [[ "$raw" =~ ^XDG_ ]] && echo "$raw" && return
+  echo "XDG_${raw^^}_DIR"
+}
+
+test_builtin_key() {
+  local key
+  key=$(normalize_xdg_key "$1")
+  grep "^$key=" "$HOME/.config/user-dirs.dirs" | cut -d= -f2- | sed 's|^\$HOME|'"$HOME"'|g' | tr -d \"
+}
+
+builtin_xdg_user_dir() {
+  local key
+  key=$(normalize_xdg_key "$1")
+  xdg-user-dir "$key"
+}
+
+my_command() {
+  local query=""
+  local do_cd=0
+  local do_mk=0
+
+  for arg in "$@"; do
+    case "$arg" in
+      --cd) do_cd=1 ;;
+      --mk) do_mk=1 ;;
+      *) query="$arg" ;;
+    esac
+  done
+
+  if [[ -z "$query" ]]; then
+    ls "$XDG_ROOT_DIR"
+    return
+  fi
+
+  local resolved=""
+
+  # 1. Exact match
+  if [[ -n "${XDG_MAP[$query]}" ]]; then
+    resolved="${XDG_MAP[$query]}"
+  else
+    # 2. Fuzzy match
+    for k in "${!XDG_MAP[@]}"; do
+      path="${XDG_MAP[$k]}"
+      base="${path##*/}"
+      [[ "$k" == *"$query"* || "$base" == *"$query"* ]] && resolved="$path" && break
+    done
+  fi
+
+  if [[ -z "$resolved" ]]; then
+    echo "❌ No match for '$query'" >&2
+    return 1
+  fi
+
+  [[ "$do_mk" -eq 1 && ! -d "$resolved" ]] && mkdir -p "$resolved"
+  [[ "$do_cd" -eq 1 ]] && cd "$resolved" || echo "$resolved"
+}
+
+
+main() {
+  local cmd="$1"
+
+  case "$cmd" in
+    help)
+      print_help
+      return 0
+      ;;
+    ls)
+      for k in "${!XDG_MAP[@]}"; do
+        printf "  %-12s → %s\n" "$k" "${XDG_MAP[$k]}"
+      done | sort
+      return 0
+      ;;
+    ls)
+      for k in "${!XDG_KEYS[@]}"; do
+        printf "  %-12s → %s\n" "$k" "${XDG_KEYS[$k]}"
+      done | sort
+      return 0
+      ;;
+
+    key)
+      shift
+      keyname="$1"
+      if [[ -n "${XDG_KEYS[$keyname]}" ]]; then
+        echo "${XDG_KEYS[$keyname]}"
+        return 0
+      else
+        echo "❌ No canonical key for '$keyname'" >&2
+        return 1
+      fi
+      ;;
+    vers*|lic*|info)
+      version; exit 0;
+     ;;
+    my)
+      shift
+      my_command "$1"
+      return $?
+      ;;
+    file)
+      cat "$HOME/.config/user-dirs.dirs";
+      return $?;
+      ;;
+    nano)
+      edit_user_dirs;
+      return 0
+      ;;
+    update)
+      xdg-user-dirs-update
+      return 0
+      ;;
+    find)
+      shift
+      test_builtin_key "$1"
+      return $?
+      ;;
+    test)
+      shift
+      builtin_xdg_user_dir "$1"
+      return $?
+      ;;
+  esac
+
+  if [[ -n "${XDG_MAP[$cmd]}" ]]; then
+    echo "${XDG_MAP[$cmd]}"
+    return 0
+  else
+    echo "❌ Unknown key or command: $cmd" >&2
+    print_help
+    return 1
+  fi
+}
+
+main "$@"

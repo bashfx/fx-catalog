@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# === Settings ===
+TARGET=""
+DO_MK=0
+
+# Parse args
+for arg in "$@"; do
+  case "$arg" in
+    --mk) DO_MK=1 ;;
+    *) [[ -z "$TARGET" ]] && TARGET="$arg" ;;
+  esac
+done
+
+# No arg = list root
+if [[ -z "$TARGET" ]]; then
+  xdg my
+  exit 0
+fi
+
+# Ask xdg to resolve path
+RESOLVED=$(xdg my "$TARGET" 2>/dev/null)
+[[ $? -ne 0 ]] && exit 1
+
+# Handle mkdir if requested
+if [[ ! -d "$RESOLVED" ]]; then
+  if [[ "$DO_MK" -eq 1 ]]; then
+    mkdir -p "$RESOLVED"
+  else
+    echo "❌ Path does not exist: $RESOLVED" >&2
+    exit 1
+  fi
+fi
+
+# Implicit cd always
+cd "$RESOLVED" || {
+  echo "❌ Failed to cd into: $RESOLVED" >&2
+  exit 1
+}
