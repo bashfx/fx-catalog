@@ -7,6 +7,10 @@
 
 set -euo pipefail
 
+CONF="${DROPX_CONF:-$HOME/.local/etc/drop.conf}"
+[ -f "$CONF" ] && . "$CONF" || true
+
+
 RUN_DIR="${DROPX_RUN_DIR:-$HOME/.local/run}"
 LOG_DIR="${DROPX_LOG_DIR:-$HOME/.local/var}"
 BIN="${DROPX_BIN:-$HOME/.local/bin/dropx}"
