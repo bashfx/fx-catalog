@@ -165,3 +165,20 @@ DEBUG_MODE=0
 MIT — free to modify and use.
 
 ---
+
+
+### ZIP Merge (`zipmerge`)
+
+For zip files, you can **merge** the archive contents into an existing directory, overwriting files that exist and leaving unrelated files untouched.
+
+- **Flag:** `zipmerge=true`
+- **Alias:** used as the **target directory name** inside the destination. If you use `alias=self`, the directory name defaults to the zip base name.
+
+**Examples**
+```
+# Merge archive contents into $HOME/app/static/ (do not create a new versioned subfolder)
+static_assets_v42.zip   static    $HOME/app/    action=extract;zipmerge=true
+
+# Merge using the zip's own base name as the target directory
+theme_pack.zip          self      $HOME/app/    action=extract;zipmerge=true
+```
