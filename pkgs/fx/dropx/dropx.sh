@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dropx v11 (fx): 3-tier logging + per-entry dryrun + confirm behavior in detached mode
+# dropx v12 (fx): 3-tier logging + per-entry dryrun + confirm behavior + zipmerge
 # Modes:
 #   QUIET (default): banner + manifests + warnings/errors
 #   INFO  (DROPX_VERBOSE=1): + transfers/extracts + git actions + collisions
@@ -172,6 +172,24 @@ do_unzip(){
   rm -f "$zip"
 }
 
+do_zip_merge(){
+  local zip="$1" target_dir="$2" eff_dry="$3"
+  if [ "$eff_dry" -eq 1 ]; then
+    act "(dry-run) zipmerge ${white2}$zip${xx} -> ${white2}$target_dir${xx} (overwrite into existing)"
+    return 0
+  fi
+  mkdir -p "$target_dir"
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+  unzip -oq "$zip" -d "$tmp"
+  # Merge contents into target (overwrite matching files, keep others)
+  # Use cp -a to avoid rsync dependency
+  cp -a "$tmp"/. "$target_dir"/
+  ok "Zip merge: ${white2}$zip${xx} -> ${white2}$target_dir${xx}"
+  rm -f "$zip"
+}
+
 # ---------- ignore logic ----------
 is_ads_builtin(){
   local b="$(basename "$1")"
@@ -293,7 +311,7 @@ process_once(){
   _log "${purple}Manifests:${xx}"
   for mf in "${MANIFS[@]}"; do _log "  ${grey}-${xx} ${white2}$mf${xx}"; done
 
-  local LINE pattern alias dest flags destx MODE EXTRACT SAFE CONFIRM DRY_POLICY
+  local LINE pattern alias dest flags destx MODE EXTRACT SAFE CONFIRM DRY_POLICY ZIPMERGE
   for mf in "${MANIFS[@]}"; do
     while IFS= read -r LINE || [ -n "$LINE" ]; do
       LINE="${LINE%"${LINE##*[![:space:]]}"}"; LINE="${LINE#"${LINE%%[![:space:]]*}"}"
@@ -315,7 +333,7 @@ process_once(){
       fi
 
       destx="$(expand_path "$dest")"
-      MODE="move"; EXTRACT="false"; SAFE="false"; CONFIRM="false"; DRY_POLICY=""
+      MODE="move"; EXTRACT="false"; SAFE="false"; CONFIRM="false"; DRY_POLICY=""; ZIPMERGE="false"
       if [ -n "${flags:-}" ]; then
         while IFS= read -r kv; do
           k="${kv%%=*}"; v="${kv#*=}"
@@ -326,6 +344,7 @@ process_once(){
             safe) SAFE="$v";;
             confirm) CONFIRM="$v";;
             dryrun) DRY_POLICY="$v";;
+            zipmerge) ZIPMERGE="$v";;
             *) trace "Unknown flag '${white2}$k${xx}' ignored." ;;
           esac
         done < <(parse_flags "$flags")
@@ -345,7 +364,15 @@ process_once(){
 
         if [ -f "$src" ]; then
           base="${src##*/}"; ext="${base##*.}"
-          if [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ]; then
+          if [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ] && [ "${ZIPMERGE,,}" = "true" ]; then
+            # zipmerge target dir: alias as directory name (or zip base if self)
+            if [ "$alias" = "self" ]; then
+              name="${base%.*}"
+            else
+              name="$alias"
+            fi
+            dst_path="${destx%/}/$name"
+          elif [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ]; then
             dst_path="$(extract_dir_for_zip "$src" "$destx" "$alias")"
           else
             dst_path="$(dest_path_for_file "$src" "$destx" "$alias")"
@@ -401,7 +428,10 @@ process_once(){
 
         if [ -f "$src" ]; then
           base="${src##*/}"; ext="${base##*.}"
-          if [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ]; then
+          if [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ] && [ "${ZIPMERGE,,}" = "true" ]; then
+            act "Zip-merge: ${white2}$src${xx} -> ${white2}$dst_path${xx}"
+            do_zip_merge "$src" "$dst_path" "$eff_dry"
+          elif [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ]; then
             act "Extract: ${white2}$src${xx} -> ${white2}$dst_path${xx}"
             do_unzip "$src" "$dst_path" "$eff_dry"
           else
@@ -423,7 +453,7 @@ process_once(){
         err "One or more destinations collided for pattern '${white2}$pattern${xx}'. Non-colliding items were processed; colliding ones were skipped."
       fi
 
-      unset rule_dest_map rule_src_for_dest colliding key src dst_path prev base ext eff_dry
+      unset rule_dest_map rule_src_for_dest colliding key src dst_path prev base ext eff_dry name
     done < "$mf"
   done
 
@@ -475,7 +505,7 @@ LAST_DROP_SIG="$(drop_signature || true)"
 LAST_MANIF_SIG="$(manifest_signature || true)"
 
 # Startup banner (always)
-_log "${purple}dropx v11 (fx)${xx}  Mode=${white2}$LOG_LEVEL${xx}  SRC_DIR=${white2}$SRC_DIR${xx}  POLL=${white2}${POLL_SEC}s${xx}  CONF=${white2}$CONF${xx}"
+_log "${purple}dropx v12 (fx)${xx}  Mode=${white2}$LOG_LEVEL${xx}  SRC_DIR=${white2}$SRC_DIR${xx}  POLL=${white2}${POLL_SEC}s${xx}  CONF=${white2}$CONF${xx}"
 
 process_once || true
 [ "$ONCE" -eq 1 ] && exit 0
