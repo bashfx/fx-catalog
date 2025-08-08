@@ -1,0 +1,3 @@
+test*.txt                     self     $HOME/drop_test/
+
+bookdb_phase2_2_fixed.zip     fixed_22 $HOME/drop_test/    action=extract

@@ -23,14 +23,14 @@
 # Settings
 #-------------------------------------------------------------------------------
 
-	red=$(tput setaf 9)
-	yellow=$(tput setaf 11)
-	orange=$(tput setaf 214)
-	green=$(tput setaf 2)
-	blue=$(tput setaf 12)
-  blue2=$(tput setaf 4)
-	purple=$(tput setaf 213)
-	grey=$(tput setaf 239)
+	# red=$(tput setaf 9)
+	# yellow=$(tput setaf 11)
+	# orange=$(tput setaf 214)
+	# green=$(tput setaf 2)
+	# blue=$(tput setaf 12)
+  # blue2=$(tput setaf 4)
+	# purple=$(tput setaf 213)
+	# grey=$(tput setaf 239)
 	w=$(tput setaf 15)
 	wz=$(tput setaf 248)
 	dash="\xE2\x80\x95"
@@ -67,6 +67,118 @@
 	RETKEY=$'\x0a'
 
 
+#-------------------------------------------------------------------------------
+# Escape
+#-------------------------------------------------------------------------------
+
+	# STDERR escapes
+	 red2=$'\x1B[38;5;197m';
+	 red=$'\x1B[38;5;1m';
+	 deep=$'\x1B[38;5;61m';
+	 deep_green=$'\x1B[38;5;60m';
+	 orange=$'\x1B[38;5;214m';
+	 orange2=$'\x1B[38;5;221m';
+	 yellow=$'\x1B[33m';
+
+	 green2=$'\x1B[38;5;156m';
+	 green=$'\x1B[38;5;10m';
+	 blue=$'\x1B[36m';
+	 blue2=$'\x1B[38;5;39m';
+	 cyan=$'\x1B[38;5;51m';
+	 magenta=$'\x1B[35m';
+
+	 purple=$'\x1B[38;5;213m';
+	 purple2=$'\x1B[38;5;141m';
+	 white=$'\x1B[38;5;247m';
+	 white2=$'\x1B[38;5;15m';
+	 grey=$'\x1B[38;5;242m';
+	 grey2=$'\x1B[38;5;240m';
+	 grey3=$'\x1B[38;5;237m';
+	 xx=$'\x1B[0m';
+
+	 LINE="$(printf '%.0s-' {1..54})";
+
+	 invert='\e[7m';
+	 italic='\e[3m';
+
+
+#-------------------------------------------------------------------------------
+# @stderr
+#-------------------------------------------------------------------------------
+stderr(){
+	local msg="$1";
+	local force_output="$2";
+	local is_error_level="$3"; # "error" if it's a fatal/error message
+
+	# follow normal stderr quietness rules.
+	if [[ -z "$QUIET_MODE" ]] || [[ -n "$force_output" ]]; then
+		printf "%b" "${msg}${xx}\n"  1>&2;
+	fi
+	return 0;
+}
+
+#-------------------------------------------------------------------------------
+# Standard Printers with Tracing
+#-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+# @fatal
+#-------------------------------------------------------------------------------
+fatal(){ stderr "${red}${*}" "force" "error"; exit 1; } #auto exit
+#-------------------------------------------------------------------------------
+# @error
+#-------------------------------------------------------------------------------
+error(){ stderr "${red}${*}" "force" "error"; }
+#-------------------------------------------------------------------------------
+# @warn
+#-------------------------------------------------------------------------------
+warn(){ stderr "${orange}${*}"; }
+#-------------------------------------------------------------------------------
+# @okay
+#-------------------------------------------------------------------------------
+okay(){ stderr "${green}${*}"; }
+#-------------------------------------------------------------------------------
+# @info
+#-------------------------------------------------------------------------------
+info(){ stderr "${blue}${*}"; }
+
+
+# we generally dont use log but its here for completeness
+#-------------------------------------------------------------------------------
+# @log
+#-------------------------------------------------------------------------------
+log(){ stderr "${white2}${*}"; }
+#-------------------------------------------------------------------------------
+# @line
+#-------------------------------------------------------------------------------
+line(){ stderr "\n\n$grey3$LINE ($1)$xx\n"; }
+
+# todo: need trap support
+
+#-------------------------------------------------------------------------------
+# Dev Only Printers
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
+# @identify
+#-------------------------------------------------------------------------------
+# force a function to identify itself
+identify(){
+	local level="${#FUNCNAME[@]}" f2="${FUNCNAME[2]}" ;
+	is_dev && stderr "${grey}⟡┄┄┄[${white2}${FUNCNAME[1]}${grey}]${grey3}<-$f2";
+}
+
+#-------------------------------------------------------------------------------
+# @magic
+#-------------------------------------------------------------------------------
+magic(){ stderr "${purple}${*}" "force"; }
+#-------------------------------------------------------------------------------
+# @debug
+#-------------------------------------------------------------------------------
+debug(){ stderr "${cyan}${*}" "force"; }
+
+
 
 #-------------------------------------------------------------------------------
 # Blade Vars
@@ -74,7 +186,7 @@
    CPID="$$"
 
 	BLADE_RC="$HOME/.bladerc"
-	BLADE_SRC="$HOME/.dx/dev" #path roots very delicate
+	BLADE_SRC="$HOME/.repos" #path roots very delicate
 	BLADE_SAFE_MODE=0
 
 	BLD_REPO_1=
@@ -168,7 +280,7 @@
 	function fin(){
 		local E="$?"
 		cleanup
-		# if [ -z "$opt_readonly_mode" ]; then
+		# if [ -z "$opt__mode" ]; then
 		# 	[ $E -eq 0 ] && printf "${green}${pass} ${1:-Done}." \
 		# 							 || printf "$red$fail ${1:-${err:-Cancelled}}."
 		# fi
@@ -505,11 +617,13 @@
 ## setup
 #-------------------------------------------------------------------------------
 
-
+	# ==============================================================================
+	# FIXED `auto_setup` FUNCTION
+	# ==============================================================================
 	function auto_setup(){
-
-		local i j k this len buf arr kg ndir rdir nd ig
-		kg=();nd=();ig=();
+		local i j k this len buf arr kg ndir rdir nd
+		local selected_groups candidate_repos candidate_indices
+		kg=();nd=();
 		this="$1"
 		handle_input
 
@@ -518,64 +632,70 @@
 		printf "\n\n\n\n\n$blue${logo//#/ }\n${sword}$x\n\n\t"
 
 		buf=($(__find_dirs "git" "$this")); ret=$?
-    sleep 4
+		sleep 4
 		__wait
 		__known_list=("${buf[@]}")
 		len=${#buf[@]}
 
 		if [ $len -gt 0 ]; then
-			for this in ${buf[@]}; do
-
+			for i in ${!buf[@]}; do
+				this="${buf[$i]}"
 				arr=(${this//\// })
 				len=${#arr[@]}
 				ndir=${arr[((len-1))]}
 				rdir=("${arr[@]:0:((len-1))}")
 
-				nd+=( "$ndir" )
+				nd+=( "$ndir" ) # nd[i] is the short name for __known_list[i]
 
 				this="$(__joinby \/ ${rdir[@]})"
 				printf "$this -> $ndir ($len)\n"
-				kg+=( $this )
-
+				kg+=( "$this" )
 			done
 		fi
 
-
-		#use global buffer and sort uniqs
+		#use global buffer and sort uniqs for group selection
 		__buf=( $(printf "%s\n" "${kg[@]}" | sort -u) )
 		__selection_buffer "Select Paths to add to Groups [${arrup}${arrdn}/spacebar]:"; ret=$?
 		[ $ret -eq 1 ] && return 1
 
 		__sort_buffer
-		__buf=()
+		__buf=() # Clear buffer for next step
 
 		OIFS="$IFS"
 		IFS=';' read -ra this <<< "$__res"
-		kg=(${this[0]})
-		ig=(${this[1]}) #<------------------------------------------- why was this 2 ???
+		selected_groups=(${this[0]}) # User-selected groups are in the 'keep' list.
+		
+		# Set the final group lists
+		__group_list=("${selected_groups[@]}")
+		__gdir_map=("${selected_groups[@]}")
+		
+		__print "$green Building project list from selected groups... $x"
+		
+		# --- FIX START ---
+		# Create a clean list of candidate repos based on selected groups,
+		# while preserving their original indices to map to short names later.
+		candidate_repos=()
+		candidate_indices=()
+		for i in ${!__known_list[@]}; do
+			local repo_path="${__known_list[$i]}"
+			local included=0
+			for group_path in "${selected_groups[@]}"; do
+				# Check if the repo path starts with a selected group path
+				if [[ "$repo_path" == "$group_path"* ]]; then
+					included=1
+					break
+				fi
+			done
 
-		__group_list=(${this[0]})
-    
-		__print "$red Building exclude list... $x"
-
-		for this in ${__group_list[@]}; do
-			__gdir_map+=( "$this" ) #$BLADE_SRC/
+			if [[ $included -eq 1 ]]; then
+				candidate_repos+=("$repo_path")
+				candidate_indices+=($i) # Save the original index from __known_list
+			fi
 		done
+		# --- FIX END ---
 
-		__buf=(${__known_list[@]})
-		__buf=( $(__filter_buffer "${ig[@]}" | sort -u) ) #keeper values
-
-    #__dump "${__buf[@]}"
-    
-    #buffer rematch to keep index
-    for i in ${!__buf[@]}; do
-      this="${__buf[$i]}"
-      keep="${__known_list[$this]}" #index swap
-      __buf[$i]=$keep
-      __keep_index+=($this)
-    done
-
-
+		# Populate the buffer for the next selection screen
+		__buf=("${candidate_repos[@]}")
 		__buf_list=0
 
 		__selection_buffer "Select Projects to track [${arrup}${arrdn}/spacebar]:"; ret=$?
@@ -584,60 +704,101 @@
 
 		OIFS="$IFS"
 		IFS=';' read -ra this <<< "$__res"
-		kg=(${this[0]})
+		kg=(${this[0]}) # Final list of user-selected repository paths
 
-    __exitscreen
 
-    SEMVER=$(which semv)
-    clear
 
-    if [ -x "$SEMVER" ]; then
-      __print "\n\n\n\n$blue\t${bolt} Blade found semver tool.${x}"
-      if __confirm "[ ${green}SEMVER ready${x} ] Load versions (y/n/q) ? "; then
-        __print "\n\n"
-        for i in ${!kg[@]}; do
-          this="${kg[$i]}"
-          this="$BLADE_SRC/$this"
-          vers="$(semv auto $this)"
-          [ -z "$vers" ] && {
-            vers='missing'
-            _vp="${red}${vers}${x}"   
-           } || _vp="${green}${vers}${x}${grey}" 
-          __semver_list+=($vers)
-          __print "[$_vp] ${purple}${this}${x}"
-        done
-      else
-        __print "${red}Skipping Semver..${x}"
-      fi
-    fi
+		__exitscreen
 
-    __print "\n\n"
 
+
+		SEMVER=$(which semv)
+		clear
+
+		if [ -x "$SEMVER" ]; then
+			__print "\n\n\n\n$blue\t${bolt} Blade found semver tool.${x}"
+			if __confirm "[ ${green}SEMVER ready${x} ] Load versions (y/n/q) ? "; then
+				__print "\n\n"
+				for i in ${!kg[@]}; do
+					this="${kg[$i]}"
+					this="$BLADE_SRC/$this"
+					vers="$(semv auto $this)"
+					[ -z "$vers" ] && {
+						vers='missing'
+						_vp="${red}${vers}${x}"   
+					} || _vp="${green}${vers}${x}${grey}" 
+					__semver_list+=($vers)
+					__print "[$_vp] ${purple}${this}${x}"
+				done
+			else
+				__print "${red}Skipping Semver..${x}"
+			fi
+		fi
+
+		__print "\n\n"
+
+		# echo "EZ DUMP!";
+		# __dump_ez "${__group_list[@]}";
+
+		# echo "EZ DUMP!";
+		# __dump_ez "${kg[@]}";
+
+		# This is the final loop to build the RC file data.
 		for i in ${!kg[@]}; do
-      __keep="${__keep_index[$i]}"
-			this="${kg[$i]}"
-			rthis="${nd[$__keep]}"  #full index is from another place so need keeper mathc
+			this="${kg[$i]}" # The full path of the final selected repo, e.g., "group1/repo-A"
+
+			# --- FIX START ---
+			# Find the current repo's path in our candidate list to get its index.
+			# Then use that index to find the *original* index from when we first scanned.
+			local current_repo_index_in_candidates=$(indexof "$this" "${candidate_repos[@]}")
+			__keep="${candidate_indices[$current_repo_index_in_candidates]}" # The original index
+			# --- FIX END ---
+
+
+
+
+			rthis="${nd[$__keep]}" # Use original index to get the correct short name
 			athis=${rthis//-/_}
+
+			#__dump_ez "${__group_list[@]}"
+
 			for j in ${!__group_list[@]}; do
+				local this_path="$BLADE_SRC/$this";
 				that="${__group_list[$j]}"
+
+				local idx=$(indexof "$athis" "${__alias_list[@]}");
+	
+				[ "$idx" -gt -1 ] && break;
+				# [ "$idx" -lt 0  ] && warn "${delta} ${athis} not found yet ${idx}";
+
 				case $this in
-					$that/*)
+					"$that"*)
 						__group_map+=($j)
-						__alias_map+=($i) #even though i thought you were not you are in fact I
+						__alias_map+=($i)
 						__alias_list+=($athis)
-						__repo_list+=($rthis) #?? even you are wrong!
-						__rdir_map+=( "$BLADE_SRC/$this" )
+						__repo_list+=($rthis)
+						__rdir_map+=( "$this_path" )
+
+
+
 					;;
 					*) : ;;
 				esac
 			done
 		done
+
 		__buf_list=0
 		__dump "${__rdir_map[@]}"
+		__dump_ez "${__rdir_map[@]}"
+
+
 		save_rc_file
 
-    __print "\n\n$blue\t${bolt} Blade indexing complete. \n\n${x}"
+		__print "\n\n$blue\t${bolt} Blade indexing complete. \n\n${x}"
 	}
+	# ==============================================================================
+	# END OF FIX
+	# ==============================================================================
 
 
 #-------------------------------------------------------------------------------
@@ -738,7 +899,7 @@
       sed -i.bak "s|^BLADE_JUMP\=.*$|BLADE_JUMP=\"$this_dir\"|" ${BLADE_RC}
       rm "${BLADE_RC}.bak"
       clear
-      if [ -z "$opt_readonly_mode" ]; then
+      if [ -z "$opt__mode" ]; then
 	      __print "\n\n\n\n$blue$dline"
 	      __print "$blue${logo//#/ }$x"
 	      __print "\t[$this_dir]\n" "blue"
@@ -887,7 +1048,8 @@
       done
       printf "$blue$dline\n${x}"
     else
-      __print "${red} Sadly no semver.${x}"
+      __print "${red} Sadly no semver. Cannot sweep.${x}"
+			exit 1;
     fi
 
     if [ $__ttl -gt 0 ]; then
@@ -1023,6 +1185,7 @@
 			sleep 1
 			auto_setup
 		else
+			#echo "$BLADE_SRC"
 			cd $BLADE_SRC
 			__dispatch "$@"
 		fi
@@ -1036,7 +1199,7 @@
 
   #read only handshake means function agrees to consume output to change the PWD
   if [[ "${@}" =~ "--read-only" ]]; then
-    opt_readonly_mode=0
+    opt__mode=0
     shift;
   fi
 
@@ -1044,7 +1207,7 @@
 
   #running in subshell
   if [[ "$0" != "-bash" ]]; then
-    if [ -n "$opt_readonly_mode" ]; then
+    if [ -n "$opt__mode" ]; then
       main "$@";ret=$?
     else
       if [ $CPID -ne $PPID ]; then
