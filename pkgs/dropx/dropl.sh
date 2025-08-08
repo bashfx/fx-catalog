@@ -1,74 +1,100 @@
 #!/usr/bin/env bash
-# dropl - Dropx launcher v3
-# Controls dropx process (start/stop/tail/status) and now nukes all inotifywait + dropx processes.
+# dropl v5 (fx namespace): launcher/manager for dropx
+# - Sources CONF from $HOME/.local/etc/fx/drop.conf by default (override with DROPX_CONF)
+# - Uses LOG/RUN in $HOME/.local/var/fx and $HOME/.local/run/fx
+# - start: setsid + nohup, writes PID/LOG, passes extra args to dropx
+# - stop: kill process group, then nuke (kills old inotifywait, stray dropx, and tails)
+# - nuke: pkill inotifywait + dropx + tail -F on our log
+# - status/tail helpers
 
-DROPX_BIN="${DROPX_BIN:-$HOME/.local/bin/dropx}"
-DROPX_LOG_DIR="$HOME/.local/var"
-DROPX_LOG="$DROPX_LOG_DIR/dropx.log"
-DROPX_PID_FILE="$DROPX_LOG_DIR/dropx.pid"
+set -euo pipefail
 
-mkdir -p "$DROPX_LOG_DIR"
+CONF="${DROPX_CONF:-$HOME/.local/etc/fx/drop.conf}"
+[ -f "$CONF" ] && . "$CONF" || true
 
-_usage() {
-    echo "Usage: dropl {start|stop|status|tail|nuke}"
-    exit 1
+RUN_DIR="${DROPX_RUN_DIR:-$HOME/.local/run/fx}"
+LOG_DIR="${DROPX_LOG_DIR:-$HOME/.local/var/fx}"
+BIN="${DROPX_BIN:-$HOME/.my/bin/dropx}"
+PID_FILE="$RUN_DIR/dropx.pid"
+LOG_FILE="$LOG_DIR/dropx.log"
+
+mkdir -p "$RUN_DIR" "$LOG_DIR"
+
+usage(){
+  echo "Usage: dropl {start|stop|tail|status|nuke} [--] [args to dropx]"
 }
 
-_start() {
-    if [ -f "$DROPX_PID_FILE" ] && kill -0 $(cat "$DROPX_PID_FILE") 2>/dev/null; then
-        echo "dropx already running (PID $(cat $DROPX_PID_FILE))"
-        exit 0
+is_running(){
+  [ -f "$PID_FILE" ] || return 1
+  local pid; pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  [ -n "$pid" ] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+start(){
+  if is_running; then
+    echo "Already running (PID $(cat "$PID_FILE")). Log: $LOG_FILE"
+    exit 0
+  fi
+  : > "$LOG_FILE"
+  ( setsid nohup "$BIN" "$@" >>"$LOG_FILE" 2>&1 & echo $! > "$PID_FILE" ) </dev/null
+  sleep 0.2
+  local pid; pid="$(cat "$PID_FILE")"
+  echo "Started dropx (PID $pid). Log: $LOG_FILE"
+}
+
+stop(){
+  if ! is_running; then
+    echo "Not running."
+  else
+    local pid; pid="$(cat "$PID_FILE")"
+    echo "Stopping dropx (PID $pid)..."
+    kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    for i in {1..20}; do
+      sleep 0.2
+      if ! kill -0 "$pid" 2>/dev/null; then break; fi
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "Force killing..."
+      kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
     fi
-    echo "Starting dropx..."
-    nohup "$DROPX_BIN" > "$DROPX_LOG" 2>&1 &
-    echo $! > "$DROPX_PID_FILE"
-    echo "Started dropx (PID $(cat $DROPX_PID_FILE)). Log: $DROPX_LOG"
+    rm -f "$PID_FILE"
+  fi
+  nuke silent
+  echo "Stopped."
 }
 
-_stop() {
-    if [ -f "$DROPX_PID_FILE" ] && kill -0 $(cat "$DROPX_PID_FILE") 2>/dev/null; then
-        echo "Stopping dropx (PID $(cat $DROPX_PID_FILE))"
-        kill $(cat "$DROPX_PID_FILE") 2>/dev/null
-        rm -f "$DROPX_PID_FILE"
-    else
-        echo "dropx not running (no PID file)"
-    fi
-    # also kill any stray inotifywait processes
-    _nuke_inotify silent
+tail_log(){
+  [ -f "$LOG_FILE" ] || { echo "No log at $LOG_FILE"; exit 1; }
+  exec tail -n +1 -F "$LOG_FILE"
 }
 
-_status() {
-    if [ -f "$DROPX_PID_FILE" ] && kill -0 $(cat "$DROPX_PID_FILE") 2>/dev/null; then
-        echo "dropx running (PID $(cat $DROPX_PID_FILE))"
-    else
-        echo "dropx not running"
-    fi
-    pgrep -a inotifywait
+status(){
+  if is_running; then
+    local pid; pid="$(cat "$PID_FILE")"
+    echo "Running. PID $pid  BIN=$BIN  LOG=$LOG_FILE  CONF=${CONF:-<none>}"
+    ps -o pid,ppid,pgid,cmd -p "$pid"
+  else
+    echo "Stopped. BIN=$BIN  LOG=$LOG_FILE  CONF=${CONF:-<none>}"
+  fi
 }
 
-_tail() {
-    tail -f "$DROPX_LOG"
+nuke(){
+  local silent="${1:-}"
+  pkill -9 -f "^inotifywait .*" 2>/dev/null || true
+  pkill -9 -f "[/]local/bin/dropx" 2>/dev/null || true
+  pkill -9 -f "tail -n \+1 -F $LOG_FILE" 2>/dev/null || true
+  pkill -9 -f "tail -F $LOG_FILE" 2>/dev/null || true
+  if [ "$silent" != "silent" ]; then
+    echo "Nuked inotifywait, stray dropx, and log tails."
+  fi
 }
 
-_nuke_inotify() {
-    local silent="$1"
-    local killed_any=false
-    pkill -9 -f "^inotifywait .*" && killed_any=true
-    pkill -9 -f "[/]local/bin/dropx" && killed_any=true
-    if [ "$silent" != "silent" ]; then
-        if [ "$killed_any" = true ]; then
-            echo "Killed all inotifywait and stray dropx processes."
-        else
-            echo "No inotifywait or stray dropx processes found."
-        fi
-    fi
-}
-
-case "$1" in
-    start) _start ;;
-    stop) _stop ;;
-    status) _status ;;
-    tail) _tail ;;
-    nuke) _nuke_inotify ;;
-    *) _usage ;;
+case "${1:-}" in
+  start) shift; start "$@";;
+  stop) shift; stop;;
+  tail) shift; tail_log;;
+  status) shift; status;;
+  nuke) shift; nuke "$@";;
+  *) usage; exit 2;;
 esac
