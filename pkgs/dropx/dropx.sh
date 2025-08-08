@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
-# dropx v7 (fx-min): last-known-working logic with fx paths + debug default + visible git output
-# Changes vs your working v7:
-#   - Uses ~/.local/etc/fx, ~/.local/var/fx, ~/.local/run/fx
-#   - CONF default: ~/.local/etc/fx/drop.conf
-#   - DEBUG_MODE default 1 (quiet). Set DEBUG_MODE=0 for verbose.
-#   - Git auto-commit output is shown in log (no >/dev/null)
-# Everything else remains identical to your working v7.
+# dropx v7 (fx-min + sanitize): last-known-working logic with fx paths + debug default + visible git output
+# + CRLF sanitization for SRC_DIR/MANIFEST to avoid early exit when conf has Windows line endings
 
 set -euo pipefail
 
@@ -32,7 +27,7 @@ readonly grey2=$'\x1B[38;5;240m'
 readonly grey3=$'\x1B[38;5;237m'
 readonly xx=$'\x1B[0m'
 
-# Note: 1 = quiet, 0 = verbose
+# 1=quiet, 0=verbose
 DEBUG_MODE="${DEBUG_MODE:-1}"
 ts(){ date +'%F %T'; }
 log()   { echo "${grey}[$(ts)]${xx} ${grey}$*${xx}"; }
@@ -82,8 +77,20 @@ while (( $# )); do
 done
 set -- "${ARGS[@]}"
 
-[ -z "${SRC_DIR:-}" ] && { err "-s drop folder required once (remembered)."; usage; exit 2; }
-[ -d "$SRC_DIR" ] || { err "drop folder not found: $SRC_DIR"; exit 1; }
+# ---------- sanitize potential CRLF/whitespace from conf/cursor/args ----------
+trim_crlf(){ printf '%s' "$1" | tr -d '\r'; }
+SRC_DIR="$(trim_crlf "${SRC_DIR:-}")"
+MANIFEST="$(trim_crlf "${MANIFEST:-}")"
+
+if [ -z "${SRC_DIR:-}" ]; then
+  err "-s drop folder required once (remembered)."
+  usage
+  exit 2
+fi
+if [ ! -d "$SRC_DIR" ]; then
+  err "drop folder not found: $SRC_DIR"
+  exit 1
+fi
 
 if [ -n "${MANIFEST:-}" ] && [ ! -f "$MANIFEST" ]; then
   dlog "Manifest not found at $MANIFEST — using drop-folder manifests only."
@@ -249,7 +256,7 @@ collect_manifests(){
   mapfile -t dm < <(find "$SRC_DIR" -maxdepth 1 -type f -iname '*manifest.rc' -printf '%f\n' | sort)
   for f in "${dm[@]}"; do out+=( "$SRC_DIR/$f" ); done
   if [ -n "${MANIFEST:-}" ] && [ -f "$MANIFEST" ]; then out+=( "$MANIFEST" ); fi
-  printf '%s\n' "${out[@]:-}"
+  printf '%s\n' "${out[@]}"
 }
 
 manifest_signature(){
@@ -458,7 +465,7 @@ LAST_MANIF_SIG="$(manifest_signature || true)"
 process_once || true
 [ "$ONCE" -eq 1 ] && exit 0
 
-echo "${grey}[${xx}$(ts)]${xx} ${purple}WSL-friendly watch${xx} ${white2}$SRC_DIR${xx} ${grey}(signature every ${POLL_SEC}s). Ctrl-C to stop.${xx}"
+echo "${grey}[${xx}$(ts)${grey}]${xx} ${purple}WSL-friendly watch${xx} ${white2}$SRC_DIR${xx} ${grey}(signature every ${POLL_SEC}s). Ctrl-C to stop.${xx}"
 while sleep "$POLL_SEC"; do
   CUR_DROP_SIG="$(drop_signature || true)"
   CUR_MANIF_SIG="$(manifest_signature || true)"
