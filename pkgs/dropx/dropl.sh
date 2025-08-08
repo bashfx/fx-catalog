@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
-# dropl v5 (fx namespace): launcher/manager for dropx
-# - Sources CONF from $HOME/.local/etc/fx/drop.conf by default (override with DROPX_CONF)
-# - Uses LOG/RUN in $HOME/.local/var/fx and $HOME/.local/run/fx
-# - start: setsid + nohup, writes PID/LOG, passes extra args to dropx
-# - stop: kill process group, then nuke (kills old inotifywait, stray dropx, and tails)
-# - nuke: pkill inotifywait + dropx + tail -F on our log
-# - status/tail helpers
+# dropl v5 (fx): launcher/manager for dropx with fx paths and nuking tails
 
 set -euo pipefail
 
