@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# dropx v10 (fx): last-known-good watcher + 3-tier logging (QUIET/INFO/DEBUG)
-# Paths default to fx namespace.
-# - QUIET (default): banner + manifest list + warnings/errors
-# - INFO  (set DROPX_VERBOSE=1): + transfers/extracts + git actions + collisions
-# - DEBUG (set DEBUG_MODE=0): everything (trace, skips, signatures, ignore hits)
+# dropx v11 (fx): 3-tier logging + per-entry dryrun + confirm behavior in detached mode
+# Modes:
+#   QUIET (default): banner + manifests + warnings/errors
+#   INFO  (DROPX_VERBOSE=1): + transfers/extracts + git actions + collisions
+#   DEBUG (DEBUG_MODE=0): full trace
 
 set -euo pipefail
 
@@ -31,7 +31,6 @@ readonly grey3=$'\x1B[38;5;237m'
 readonly xx=$'\x1B[0m'
 
 # ---------- logging level ----------
-# 1 = quiet (default), 0 = debug. INFO is enabled via DROPX_VERBOSE=1.
 DEBUG_MODE="${DEBUG_MODE:-1}"
 DROPX_VERBOSE="${DROPX_VERBOSE:-0}"
 if [ "$DEBUG_MODE" -eq 0 ]; then
@@ -43,11 +42,11 @@ else
 fi
 
 ts(){ date +'%F %T'; }
-_log()   { echo "${grey}[$(ts)]${xx} ${grey}$*${xx}"; }        # trace/info
-_ok()    { echo "${grey}[$(ts)]${xx} ${green}$*${xx}"; }       # success
-_note()  { echo "${grey}[$(ts)]${xx} ${blue}$*${xx}"; }        # actions
-_warn()  { echo "${grey}[$(ts)]${xx} ${yellow}$*${xx}"; }      # warnings
-_err()   { echo "${grey}[$(ts)]${xx} ${red}$*${xx}"; }         # errors
+_log()   { echo "${grey}[$(ts)]${xx} ${grey}$*${xx}"; }
+_ok()    { echo "${grey}[$(ts)]${xx} ${green}$*${xx}"; }
+_note()  { echo "${grey}[$(ts)]${xx} ${blue}$*${xx}"; }
+_warn()  { echo "${grey}[$(ts)]${xx} ${yellow}$*${xx}"; }
+_err()   { echo "${grey}[$(ts)]${xx} ${red}$*${xx}"; }
 
 trace(){ [ "$LOG_LEVEL" = "DEBUG" ] && _log "$@"; }
 info(){ [ "$LOG_LEVEL" = "INFO" ] || [ "$LOG_LEVEL" = "DEBUG" ] && _log "$@"; }
@@ -56,10 +55,10 @@ ok(){   [ "$LOG_LEVEL" = "INFO" ] || [ "$LOG_LEVEL" = "DEBUG" ] && _ok "$@"; }
 warn(){ _warn "$@"; }
 err(){  _err "$@"; }
 
-# ---------- bootstrap dirs (fx) ----------
+# ---------- fx dirs ----------
 mkdir -p "$HOME/.local/etc/fx" "$HOME/.local/var/fx" "$HOME/.local/run/fx"
 
-# ---------- load defaults (conf -> cursor -> CLI overrides) ----------
+# ---------- load config ----------
 CONF="${DROPX_CONF:-$HOME/.local/etc/fx/drop.conf}"
 [ -f "$CONF" ] && . "$CONF" || true
 
@@ -120,26 +119,18 @@ parse_flags(){ local s="${1:-}"; s="$(echo "$s" | tr -d '[:space:]')"; IFS=';' r
 git_root_for(){ local p="$1"; local t="$p"; [ -d "$t" ] || t="$(dirname "$t")"; git -C "$t" rev-parse --show-toplevel 2>/dev/null || true; }
 
 ensure_git_safe(){
-  local repo="$1" policy="$2"; [ -z "$repo" ] && return 0
+  local repo="$1" policy="$2" eff_dry="$3"; [ -z "$repo" ] && return 0
   if [ -n "$(git -C "$repo" status --porcelain)" ]; then
     case "$policy" in
       auto)
         local msg="fix: auto sync save $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-        [ "$DRYRUN" -eq 1 ] && { trace "(dry-run) would git add/commit in $repo"; return 0; }
+        [ "$eff_dry" -eq 1 ] && { trace "(dry-run) would git add/commit in $repo"; return 0; }
         act "Repo dirty at ${white2}$repo${xx} — auto committing."
         git -C "$repo" add -A
         git -C "$repo" commit -m "$msg"
         ;;
       true)
-        if [ "$DRYRUN" -eq 1 ]; then trace "(dry-run) would prompt commit at $repo"; return 1; fi
-        read -rp "Repo $repo dirty. Commit now? [y/N] " ans
-        if [[ "$ans" =~ ^[Yy]$ ]]; then
-          git -C "$repo" add -A
-          git -C "$repo" commit -m "fix: sync pre-commit $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-        else
-          err "Aborting (safe=true declined)."; exit 1
-        fi
-        ;;
+        err "Aborting: destination repo dirty (safe=true requires manual commit)."; exit 1;;
       false|"") err "Aborting: destination repo dirty (safe=false)."; exit 1;;
       *) err "Unknown safe policy: $policy"; exit 1;;
     esac
@@ -147,8 +138,8 @@ ensure_git_safe(){
 }
 
 do_transfer(){
-  local src="$1" dst="$2" mode="$3"
-  if [ "$DRYRUN" -eq 1 ]; then
+  local src="$1" dst="$2" mode="$3" eff_dry="$4"
+  if [ "$eff_dry" -eq 1 ]; then
     act "(dry-run) $mode ${white2}$src${xx} -> ${white2}$dst${xx}"
     act "(dry-run) then remove ${white2}$src${xx}"
     return 0
@@ -170,8 +161,8 @@ do_transfer(){
 }
 
 do_unzip(){
-  local zip="$1" out="$2"
-  if [ "$DRYRUN" -eq 1 ]; then
+  local zip="$1" out="$2" eff_dry="$3"
+  if [ "$eff_dry" -eq 1 ]; then
     act "(dry-run) unzip ${white2}$zip${xx} -> ${white2}$out${xx}"
     act "(dry-run) then remove ${white2}$zip${xx}"
     return 0
@@ -299,11 +290,10 @@ process_once(){
     return 0
   fi
 
-  # Show manifest list at each run (short, non-spammy)
   _log "${purple}Manifests:${xx}"
   for mf in "${MANIFS[@]}"; do _log "  ${grey}-${xx} ${white2}$mf${xx}"; done
 
-  local LINE pattern alias dest flags destx MODE EXTRACT SAFE CONFIRM
+  local LINE pattern alias dest flags destx MODE EXTRACT SAFE CONFIRM DRY_POLICY
   for mf in "${MANIFS[@]}"; do
     while IFS= read -r LINE || [ -n "$LINE" ]; do
       LINE="${LINE%"${LINE##*[![:space:]]}"}"; LINE="${LINE#"${LINE%%[![:space:]]*}"}"
@@ -325,7 +315,7 @@ process_once(){
       fi
 
       destx="$(expand_path "$dest")"
-      MODE="move"; EXTRACT="false"; SAFE="false"; CONFIRM="false"
+      MODE="move"; EXTRACT="false"; SAFE="false"; CONFIRM="false"; DRY_POLICY=""
       if [ -n "${flags:-}" ]; then
         while IFS= read -r kv; do
           k="${kv%%=*}"; v="${kv#*=}"
@@ -335,6 +325,7 @@ process_once(){
             extract) EXTRACT="$v";;
             safe) SAFE="$v";;
             confirm) CONFIRM="$v";;
+            dryrun) DRY_POLICY="$v";;
             *) trace "Unknown flag '${white2}$k${xx}' ignored." ;;
           esac
         done < <(parse_flags "$flags")
@@ -384,25 +375,46 @@ process_once(){
         dst_path="$key"
         _touched["$src"]=1 || true
 
-        repo="$(git_root_for "$destx")"; [ -n "$repo" ] && ensure_git_safe "$repo" "$SAFE"
+        # Effective dry-run: flag overrides global
+        eff_dry="$DRYRUN"
+        case "${DRY_POLICY,,}" in
+          true|1|yes|on) eff_dry=1 ;;
+          false|0|no|off) eff_dry=0 ;;
+        esac
+
+        # Enforce confirm
+        if [ "${CONFIRM,,}" = "true" ]; then
+          if [ -t 0 ]; then
+            read -rp "Confirm ${MODE} of $(basename "$src") to $dst_path ? [y/N] " ans
+            if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+              warn "User declined confirm; skipping ${white2}$src${xx}"
+              continue
+            fi
+          else
+            err "confirm=true but not running in interactive mode; skipping ${white2}$src${xx}"
+            continue
+          fi
+        fi
+
+        repo="$(git_root_for "$destx")"; [ -n "$repo" ] && ensure_git_safe "$repo" "$SAFE" "$eff_dry"
         mkdir -p "$destx"
 
         if [ -f "$src" ]; then
           base="${src##*/}"; ext="${base##*.}"
           if [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ]; then
             act "Extract: ${white2}$src${xx} -> ${white2}$dst_path${xx}"
-            do_unzip "$src" "$dst_path"
+            do_unzip "$src" "$dst_path" "$eff_dry"
           else
             act "Transfer ($MODE): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
-            do_transfer "$src" "$dst_path" "$MODE"
+            do_transfer "$src" "$dst_path" "$MODE" "$eff_dry"
           fi
         elif [ -d "$src" ]; then
           if [ "$alias" = "self" ]; then
             act "Transfer dir ($MODE): ${white2}$src${xx} -> ${white2}$destx/${xx}"
-            do_transfer "$src" "$destx" "$MODE"
+            do_transfer "$src" "$destx" "$MODE" "$eff_dry"
           else
             act "Transfer dir ($MODE): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
-            do_transfer "$src" "$dst_path" "$MODE"
+            do_transfer "$src" "$dst_path" "$MODE" "$eff_dry"
           fi
         fi
       done
@@ -411,7 +423,7 @@ process_once(){
         err "One or more destinations collided for pattern '${white2}$pattern${xx}'. Non-colliding items were processed; colliding ones were skipped."
       fi
 
-      unset rule_dest_map rule_src_for_dest colliding key src dst_path prev base ext
+      unset rule_dest_map rule_src_for_dest colliding key src dst_path prev base ext eff_dry
     done < "$mf"
   done
 
@@ -435,7 +447,7 @@ report_untracked(){
   done
 }
 
-# ---------- signatures (same as v4 base) ----------
+# ---------- signatures ----------
 drop_signature(){
   local saved
   saved="$(pwd)"
@@ -463,7 +475,7 @@ LAST_DROP_SIG="$(drop_signature || true)"
 LAST_MANIF_SIG="$(manifest_signature || true)"
 
 # Startup banner (always)
-_log "${purple}dropx v10 (fx)${xx}  Mode=${white2}$LOG_LEVEL${xx}  SRC_DIR=${white2}$SRC_DIR${xx}  POLL=${white2}${POLL_SEC}s${xx}  CONF=${white2}$CONF${xx}"
+_log "${purple}dropx v11 (fx)${xx}  Mode=${white2}$LOG_LEVEL${xx}  SRC_DIR=${white2}$SRC_DIR${xx}  POLL=${white2}${POLL_SEC}s${xx}  CONF=${white2}$CONF${xx}"
 
 process_once || true
 [ "$ONCE" -eq 1 ] && exit 0
