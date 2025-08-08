@@ -7,45 +7,7 @@
 
   readonly SEMV_PATH="${BASH_SOURCE[0]}";
 
-#-------------------------------------------------------------------------------
-# Boot
-#-------------------------------------------------------------------------------
 
-  _is_dir(){
-    [ -n "$1" ] && [ -d "$1" ] && return 0;
-    return 1;
-  }
-
-  if _is_dir "$FX_INC_DIR"; then
-    _inc="$FX_INC_DIR";
-    _app="$FX_APP_DIR";
-  elif _is_dir "$FXI_INC_DIR"; then
-    _inc="$FXI_INC_DIR";
-    _app="$FXI_APP_DIR";
-  else 
-    printf "[ENV]. Cant locate [include] ($_inc). Fatal.\n";
-    exit 1;
-  fi
-
-#-------------------------------------------------------------------------------
-# Core Libraries
-#-------------------------------------------------------------------------------
-
-  source "$_inc/base.sh"; 
-
-  if is_base_ready; then
-    fx_smart_source stdfx    || exit 1;
-    fx_smart_source stdutils || exit 1;
-    fx_smart_source stdfx    || exit 1;
-    fx_smart_source stderr   || exit 1;
-  else
-    error "Problem loading core libaries";
-    exit 1;
-  fi
-
-  KNIFE="$(map_core_app knife)";
-  
-  _using( GIT FIND GREP AWK DATE SED );
   
 #-------------------------------------------------------------------------------
 # State Vars
@@ -94,9 +56,20 @@
   idots="\xE2\x80\xA6"
   bolt="\xE2\x86\xAF"
   spark="\xe2\x9f\xa1"
+
+
+identify(){
+	local level="${#FUNCNAME[@]}" f2="${FUNCNAME[2]}" ;
+	is_dev && stderr "${grey}⟡┄┄┄[${white2}${FUNCNAME[1]}${grey}]${grey3}<-$f2";
+}
+
 #-------------------------------------------------------------------------------
 # Printers
 #-------------------------------------------------------------------------------
+
+  # clobbered by stdfx
+  command_exists(){ type "$1" &> /dev/null; }
+  function_exists(){ [ -n "$1" ] && declare -F "$1" >/dev/null; };
 
   #replace with stderr. 
 
@@ -802,12 +775,14 @@
     local ret force_bump=${1:-1}
     local latest=$(do_latest_tag)
     local val=$(do_next_semver)
-    ret=$?
+    ret=$?;
     if [ $ret -eq 0 ] && [ -n "$val" ]; then
       trace "bump latest[ $latest ] -> new[ $val ] (run:${force_bump})"
       if [ "$force_bump" == "0" ]; then
+				info 'retag...'
         do_retag "$val" "$latest"
       else
+				warn "print val only? (got=$val, force=$force_bump, tag=$latest)"
         echo "$val"
       fi
     fi
@@ -956,6 +931,7 @@
   do_auto(){
     local path=$1 call=$2 ret arg
 
+	
     #try to get the version of a files parent dir
     if [ -f "$path" ]; then
       parent_dir=$(dirname "$path")
@@ -967,7 +943,7 @@
     if [ -d "$path" ]; then
       cd "$path"
       if is_repo; then
-        #info "call is $call"
+        info "call is $call"
 
         case $call in
           chg) cmd='do_pending';arg='any'; ;;
@@ -1159,8 +1135,8 @@
 
 
     if [ -n "$cmd" ]; then
-      #$cmd "$arg" "$arg2"; ret=$?;
-      $cmd "${@}"; ret=$?; # if something breaks probably here
+      $cmd "$arg" "$arg2"; ret=$?;
+      #$cmd "${@}"; ret=$?; # if something breaks probably here
       return $ret;
     fi
 
