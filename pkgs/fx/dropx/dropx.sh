@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-# dropx: watch-restore v4 + DEBUG + ADS ignore
-# - Baseline is your last working v4 (watching behavior unchanged)
-# - Adds DEBUG_MODE (0/1) gating for noisy logs
-# - Ignores Windows attachment/ADS artefacts:
-#     * Names containing ':Zone.Identifier' or ending in '.Zone.Identifier'
-#     * 'Zone.Identifier' files
-#     * 'desktop.ini', 'Thumbs.db', 'ehthumbs.db'
-#     * Apple '._*' resource forks (just in case)
-# - Everything else from v4 preserved: multi-match non-colliding, collision detection, CRLF strip,
-#   empty-src guard, root guard, assoc-array reset.
+# dropx: watch-restore v4 + DEBUG + ADS-ignore + configurable ignore globs (v7)
+# - Baseline: your last working v4 behavior (polling watch, signatures)
+# - DEBUG_MODE gating for noisy logs
+# - Built-in ignore of Windows/Apple junk + user-configurable globs via DROPX_IGNORE_GLOBS in drop.conf
+#     Example: DROPX_IGNORE_GLOBS='*.tmp,*.bak,~*,*.crdownload'
+# - Keeps: multi-match non-colliding, collision detection, CRLF strip, empty-src guard, root guard, assoc-array reset.
 
 set -euo pipefail
 
@@ -60,6 +56,10 @@ MANIFEST="${CURSOR_MANIFEST:-${DROPX_MANIFEST:-}}"
 SRC_DIR="${CURSOR_SRC_DIR:-${DROPX_SRC_DIR:-}}"
 POLL_SEC="${DROPX_POLL_SEC:-2}"
 ONCE=0
+# user-configurable ignore globs (comma-separated list)
+IGNORE_GLOBS_RAW="${DROPX_IGNORE_GLOBS:-}"
+# normalize to array
+IFS=',' read -r -a IGNORE_GLOBS <<< "${IGNORE_GLOBS_RAW}"
 
 usage(){ cat <<EOF
 Usage: dropx [-m manifest.rc] [-s /mnt/c/DropZone] [-n] [-v] [--once] [--poll N]
@@ -162,7 +162,9 @@ do_unzip(){
   rm -f "$zip"
 }
 
-is_ads_junk(){
+# ---------- ignore logic ----------
+# built-ins (ADS/Windows/Apple litter)
+is_ads_builtin(){
   local b="$(basename "$1")"
   [[ "$b" == *:Zone.Identifier* ]] && return 0
   [[ "$b" == *.Zone.Identifier ]] && return 0
@@ -172,6 +174,32 @@ is_ads_junk(){
   [[ "$b" == ._* ]] && return 0
   return 1
 }
+is_user_ignored(){
+  local b="$(basename "$1")" g
+  for g in "${IGNORE_GLOBS[@]:-}"; do
+    # trim spaces
+    g="${g##+([[:space:]])}"; g="${g%%+([[:space:]])}"
+    [ -z "$g" ] && continue
+    [[ "$b" == $g ]] && return 0
+  done
+  return 1
+}
+is_ignored(){
+  is_ads_builtin "$1" && return 0
+  is_user_ignored "$1" && return 0
+  return 1
+}
+
+is_drop_root(){
+  local p="$1"
+  [[ "$p" = "$SRC_DIR" || "$p" = "$SRC_DIR/" || "$p" = "$SRC_DIR/." ]]
+}
+
+touched_reset(){
+  unset _touched 2>/dev/null || true
+  declare -gA _touched
+}
+declare -gA _touched
 
 dest_path_for_file(){
   local src="$1" dir="$2" ali="$3"; local base ext; base="$(basename "$src")"
@@ -191,17 +219,6 @@ extract_dir_for_zip(){
   echo "${dir%/}/$name"
 }
 
-is_drop_root(){
-  local p="$1"
-  [[ "$p" = "$SRC_DIR" || "$p" = "$SRC_DIR/" || "$p" = "$SRC_DIR/." ]]
-}
-
-touched_reset(){
-  unset _touched 2>/dev/null || true
-  declare -gA _touched
-}
-declare -gA _touched
-
 match_items(){
   local pat="$1" saved
   if [ -z "${pat:-}" ] || [ "$pat" = "." ] || [ "$pat" = "./" ]; then
@@ -217,7 +234,7 @@ match_items(){
   for x in "${m[@]:-}"; do
     local full="$SRC_DIR/$x"
     is_drop_root "$full" && continue
-    is_ads_junk "$full" && continue
+    is_ignored "$full" && { dlog "Ignoring by glob/builtin: $(basename "$full")"; continue; }
     out+=( "$full" )
   done
   printf '%s\n' "${out[@]:-}"
@@ -315,18 +332,9 @@ process_once(){
       colliding=0
 
       for src in "${matches[@]}"; do
-        if [ -z "${src:-}" ]; then
-          dlog "Empty src for pattern '${white2}$pattern${xx}' — skipping this match."
-          continue
-        fi
-        if is_drop_root "$src"; then
-          warn "Refusing to act on drop root: ${white2}$src${xx}"
-          continue
-        fi
-        if is_ads_junk "$src"; then
-          dlog "Ignoring ADS/attachment artefact: ${white2}$src${xx}"
-          continue
-        fi
+        if [ -z "${src:-}" ]; then dlog "Empty src for pattern '${white2}$pattern${xx}' — skipping this match."; continue; fi
+        if is_drop_root "$src"; then warn "Refusing to act on drop root: ${white2}$src${xx}"; continue; fi
+        if is_ignored "$src"; then dlog "Ignoring by glob/builtin: ${white2}$(basename "$src")${xx}"; continue; fi
 
         if [ -f "$src" ]; then
           base="${src##*/}"; ext="${base##*.}"
@@ -409,7 +417,7 @@ report_untracked(){
     local full="$SRC_DIR/$item"
     [[ "$item" == *manifest.rc ]] && continue
     [[ "$item" == . || "$item" == .. ]] && continue
-    is_ads_junk "$full" && continue
+    is_ignored "$full" && continue
     if [[ -z "${_touched[$full]:-}" ]]; then
       log "Untracked in drop: ${white2}$full${xx} ${grey}(no matching rule)${xx}"
     fi

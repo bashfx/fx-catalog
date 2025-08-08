@@ -1,81 +1,83 @@
 #!/usr/bin/env bash
-# dropl: launcher for dropx (nohup+PID+log), with conf + bootstrap of ~/.local dirs
+# dropl v2: launcher/manager for dropx
+# - start: nohup + setsid, write PID + LOG; prints PID and log path
+# - tail: follow log
+# - stop: kill process group; fallback pkill on inotifywait and dropx patterns; clean pidfile
+# - status: show running PID and process tree
+
 set -euo pipefail
 
-# ---------- bootstrap local dirs ----------
-mkdir -p "$HOME/.local/etc/fx" "$HOME/.local/var/fx" "$HOME/.local/run/fx"
+RUN_DIR="${DROPX_RUN_DIR:-$HOME/.local/run}"
+LOG_DIR="${DROPX_LOG_DIR:-$HOME/.local/var}"
+BIN="${DROPX_BIN:-$HOME/.local/bin/dropx}"
+PID_FILE="$RUN_DIR/dropx.pid"
+LOG_FILE="$LOG_DIR/dropx.log"
 
-# ---------- load defaults from user config ----------
-CONF="${DROPX_CONF:-$HOME/.local/etc/fx/drop.conf}"
-[ -f "$CONF" ] && . "$CONF" || true
+mkdir -p "$RUN_DIR" "$LOG_DIR"
 
-
-# paths from conf or defaults
-PIDF="${DROPX_PID:-$HOME/.dropx.pid}"
-LOGF="${DROPX_LOG:-$HOME/dropx.log}"
-
-# ensure parent dirs for pid/log
-mkdir -p "$(dirname "$PIDF")" "$(dirname "$LOGF")"
-
-usage(){ cat <<EOF
-Usage: dropl start [args...] | stop | status | tail | conf
-  start [args...]  -> nohup dropx [args...] >> \$LOGF 2>&1 & ; save \$PIDF
-                      (runs 'conf' first if config missing)
-  stop             -> kill PID from \$PIDF
-  status           -> show PID if running
-  tail             -> tail -f \$LOGF
-  conf             -> ensure config file exists and open in \$EDITOR (or nano)
-Files:
-  Conf: $CONF
-  PID:  $PIDF
-  LOG:  $LOGF
-EOF
+usage(){
+  echo "Usage: dropl {start|stop|tail|status} [--] [args to dropx]"
 }
 
-ensure_conf() {
-  mkdir -p "$(dirname "$CONF")"
-  if [ ! -f "$CONF" ]; then
-    touch "$CONF"
-    echo "# dropx config" >> "$CONF"
-    echo "Created new config at $CONF"
+is_running(){
+  [ -f "$PID_FILE" ] || return 1
+  local pid; pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  [ -n "$pid" ] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+start(){
+  if is_running; then
+    echo "Already running (PID $(cat "$PID_FILE"))."; exit 0
+  fi
+  : > "$LOG_FILE"
+  ( setsid nohup "$BIN" "$@" >>"$LOG_FILE" 2>&1 & echo $! > "$PID_FILE" ) </dev/null
+  sleep 0.2
+  local pid; pid="$(cat "$PID_FILE")"
+  echo "Started dropx (PID $pid). Log: $LOG_FILE"
+}
+
+stop(){
+  if ! is_running; then
+    echo "Not running."
+  else
+    local pid; pid="$(cat "$PID_FILE")"
+    echo "Stopping dropx (PID $pid)..."
+    kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    for i in {1..20}; do
+      sleep 0.2
+      if ! kill -0 "$pid" 2>/dev/null; then break; fi
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "Force killing..."
+      kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PID_FILE"
+  fi
+  pkill -f "^inotifywait .*" 2>/dev/null || true
+  pkill -f "[/]local/bin/dropx" 2>/dev/null || true
+  echo "Stopped."
+}
+
+tail_log(){
+  [ -f "$LOG_FILE" ] || { echo "No log at $LOG_FILE"; exit 1; }
+  exec tail -n +1 -F "$LOG_FILE"
+}
+
+status(){
+  if is_running; then
+    local pid; pid="$(cat "$PID_FILE")"
+    echo "Running. PID $pid"
+    ps -o pid,ppid,pgid,cmd -p "$pid"
+  else
+    echo "Stopped."
   fi
 }
 
-cmd="${1:-}"; shift || true
-case "$cmd" in
-  conf)
-    ensure_conf
-    ${EDITOR:-nano} "$CONF"
-    ;;
-  start)
-    ensure_conf
-    if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
-      echo "dropx already running (PID $(cat "$PIDF")). Log: $LOGF"; exit 0
-    fi
-    : > "$LOGF"
-    nohup dropx "$@" >>"$LOGF" 2>&1 &
-    echo $! > "$PIDF"
-    echo "Started dropx (PID $(cat "$PIDF")). Log: $LOGF"
-    ;;
-  stop)
-    if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
-      kill "$(cat "$PIDF")" && rm -f "$PIDF"
-      echo "Stopped dropx."
-    else
-      echo "No running dropx."
-      rm -f "$PIDF" || true
-    fi
-    ;;
-  status)
-    if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
-      echo "dropx running (PID $(cat "$PIDF")). Log: $LOGF"
-    else
-      echo "dropx not running."
-    fi
-    ;;
-  tail)
-    [ -f "$LOGF" ] || { echo "No log at $LOGF"; exit 1; }
-    tail -f "$LOGF"
-    ;;
+case "${1:-}" in
+  start) shift; start "$@";;
+  stop) shift; stop;;
+  tail) shift; tail_log;;
+  status) shift; status;;
   *) usage; exit 2;;
 esac
