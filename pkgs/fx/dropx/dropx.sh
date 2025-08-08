@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# dropx: watch-restore v4 + DEBUG + ADS-ignore + configurable ignore globs (v7)
-# - Baseline: your last working v4 behavior (polling watch, signatures)
-# - DEBUG_MODE gating for noisy logs
-# - Built-in ignore of Windows/Apple junk + user-configurable globs via DROPX_IGNORE_GLOBS in drop.conf
-#     Example: DROPX_IGNORE_GLOBS='*.tmp,*.bak,~*,*.crdownload'
-# - Keeps: multi-match non-colliding, collision detection, CRLF strip, empty-src guard, root guard, assoc-array reset.
+# dropx v10 (fx): last-known-good watcher + 3-tier logging (QUIET/INFO/DEBUG)
+# Paths default to fx namespace.
+# - QUIET (default): banner + manifest list + warnings/errors
+# - INFO  (set DROPX_VERBOSE=1): + transfers/extracts + git actions + collisions
+# - DEBUG (set DEBUG_MODE=0): everything (trace, skips, signatures, ignore hits)
 
 set -euo pipefail
 
@@ -31,20 +30,37 @@ readonly grey2=$'\x1B[38;5;240m'
 readonly grey3=$'\x1B[38;5;237m'
 readonly xx=$'\x1B[0m'
 
-DEBUG_MODE="${DEBUG_MODE:-0}"
-ts(){ date +'%F %T'; }
-log()   { echo "${grey}[$(ts)]${xx} ${grey}$*${xx}"; }
-ok()    { echo "${grey}[$(ts)]${xx} ${green}$*${xx}"; }
-note()  { echo "${grey}[$(ts)]${xx} ${blue}$*${xx}"; }
-warn()  { echo "${grey}[$(ts)]${xx} ${yellow}$*${xx}"; }
-err()   { echo "${grey}[$(ts)]${xx} ${red}$*${xx}"; }
-dlog()  { [ "$DEBUG_MODE" -eq 1 ] && log "$@"; }
+# ---------- logging level ----------
+# 1 = quiet (default), 0 = debug. INFO is enabled via DROPX_VERBOSE=1.
+DEBUG_MODE="${DEBUG_MODE:-1}"
+DROPX_VERBOSE="${DROPX_VERBOSE:-0}"
+if [ "$DEBUG_MODE" -eq 0 ]; then
+  LOG_LEVEL="DEBUG"
+elif [ "$DROPX_VERBOSE" -eq 1 ]; then
+  LOG_LEVEL="INFO"
+else
+  LOG_LEVEL="QUIET"
+fi
 
-# ---------- bootstrap ----------
-mkdir -p "$HOME/.local/etc" "$HOME/.local/var" "$HOME/.local/run"
+ts(){ date +'%F %T'; }
+_log()   { echo "${grey}[$(ts)]${xx} ${grey}$*${xx}"; }        # trace/info
+_ok()    { echo "${grey}[$(ts)]${xx} ${green}$*${xx}"; }       # success
+_note()  { echo "${grey}[$(ts)]${xx} ${blue}$*${xx}"; }        # actions
+_warn()  { echo "${grey}[$(ts)]${xx} ${yellow}$*${xx}"; }      # warnings
+_err()   { echo "${grey}[$(ts)]${xx} ${red}$*${xx}"; }         # errors
+
+trace(){ [ "$LOG_LEVEL" = "DEBUG" ] && _log "$@"; }
+info(){ [ "$LOG_LEVEL" = "INFO" ] || [ "$LOG_LEVEL" = "DEBUG" ] && _log "$@"; }
+act(){  [ "$LOG_LEVEL" = "INFO" ] || [ "$LOG_LEVEL" = "DEBUG" ] && _note "$@"; }
+ok(){   [ "$LOG_LEVEL" = "INFO" ] || [ "$LOG_LEVEL" = "DEBUG" ] && _ok "$@"; }
+warn(){ _warn "$@"; }
+err(){  _err "$@"; }
+
+# ---------- bootstrap dirs (fx) ----------
+mkdir -p "$HOME/.local/etc/fx" "$HOME/.local/var/fx" "$HOME/.local/run/fx"
 
 # ---------- load defaults (conf -> cursor -> CLI overrides) ----------
-CONF="${DROPX_CONF:-$HOME/.local/etc/drop.conf}"
+CONF="${DROPX_CONF:-$HOME/.local/etc/fx/drop.conf}"
 [ -f "$CONF" ] && . "$CONF" || true
 
 CURSOR_FILE="$HOME/.droprc"
@@ -56,9 +72,7 @@ MANIFEST="${CURSOR_MANIFEST:-${DROPX_MANIFEST:-}}"
 SRC_DIR="${CURSOR_SRC_DIR:-${DROPX_SRC_DIR:-}}"
 POLL_SEC="${DROPX_POLL_SEC:-2}"
 ONCE=0
-# user-configurable ignore globs (comma-separated list)
 IGNORE_GLOBS_RAW="${DROPX_IGNORE_GLOBS:-}"
-# normalize to array
 IFS=',' read -r -a IGNORE_GLOBS <<< "${IGNORE_GLOBS_RAW}"
 
 usage(){ cat <<EOF
@@ -82,15 +96,17 @@ while (( $# )); do
 done
 set -- "${ARGS[@]}"
 
-[ -z "${SRC_DIR:-}" ] && { err "-s drop folder required once (remembered)."; usage; exit 2; }
-[ -d "$SRC_DIR" ] || { err "drop folder not found: $SRC_DIR"; exit 1; }
+# ---------- sanitize CRLF ----------
+trim_crlf(){ printf '%s' "$1" | tr -d '\r'; }
+SRC_DIR="$(trim_crlf "${SRC_DIR:-}")"
+MANIFEST="$(trim_crlf "${MANIFEST:-}")"
 
-if [ -n "${MANIFEST:-}" ] && [ ! -f "$MANIFEST" ]; then
-  dlog "Manifest not found at $MANIFEST — using drop-folder manifests only."
-  MANIFEST=""
-fi
+if [ -z "${SRC_DIR:-}" ]; then err "-s drop folder required once (remembered)."; usage; exit 2; fi
+if [ ! -d "$SRC_DIR" ]; then err "drop folder not found: $SRC_DIR"; exit 1; fi
+if [ -n "${MANIFEST:-}" ] && [ ! -f "$MANIFEST" ]; then trace "Manifest not found at $MANIFEST — using drop-folder manifests only."; MANIFEST=""; fi
 
-mkdir -p "$(dirname "$CURSOR_FILE")"
+# ---------- save cursor ----------
+mkdir -p "$(dirname "$CURSOR_FILE")" 2>/dev/null || true
 cat > "$CURSOR_FILE" <<EOF
 CURSOR_SRC_DIR="$(printf '%s' "$SRC_DIR")"
 CURSOR_MANIFEST="$(printf '%s' "${MANIFEST:-}")"
@@ -109,14 +125,17 @@ ensure_git_safe(){
     case "$policy" in
       auto)
         local msg="fix: auto sync save $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-        note "Repo dirty at ${white2}$repo${xx} — ${cyan}auto committing${xx}."
-        [ "$DRYRUN" -eq 1 ] || { git -C "$repo" add -A && git -C "$repo" commit -m "$msg" >/dev/null; }
+        [ "$DRYRUN" -eq 1 ] && { trace "(dry-run) would git add/commit in $repo"; return 0; }
+        act "Repo dirty at ${white2}$repo${xx} — auto committing."
+        git -C "$repo" add -A
+        git -C "$repo" commit -m "$msg"
         ;;
       true)
-        if [ "$DRYRUN" -eq 1 ]; then dlog "(dry-run) would prompt to commit at ${white2}$repo${xx}"; return 1; fi
+        if [ "$DRYRUN" -eq 1 ]; then trace "(dry-run) would prompt commit at $repo"; return 1; fi
         read -rp "Repo $repo dirty. Commit now? [y/N] " ans
         if [[ "$ans" =~ ^[Yy]$ ]]; then
-          git -C "$repo" add -A && git -C "$repo" commit -m "fix: sync pre-commit $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >/dev/null
+          git -C "$repo" add -A
+          git -C "$repo" commit -m "fix: sync pre-commit $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
         else
           err "Aborting (safe=true declined)."; exit 1
         fi
@@ -130,8 +149,8 @@ ensure_git_safe(){
 do_transfer(){
   local src="$1" dst="$2" mode="$3"
   if [ "$DRYRUN" -eq 1 ]; then
-    note "(dry-run) ${blue2}$mode${xx} ${white2}$src${xx} -> ${white2}$dst${xx}"
-    note "(dry-run) then remove ${white2}$src${xx}"
+    act "(dry-run) $mode ${white2}$src${xx} -> ${white2}$dst${xx}"
+    act "(dry-run) then remove ${white2}$src${xx}"
     return 0
   fi
   mkdir -p "$(dirname "$dst")"
@@ -153,8 +172,8 @@ do_transfer(){
 do_unzip(){
   local zip="$1" out="$2"
   if [ "$DRYRUN" -eq 1 ]; then
-    note "(dry-run) ${cyan}unzip${xx} ${white2}$zip${xx} -> ${white2}$out${xx}"
-    note "(dry-run) then remove ${white2}$zip${xx}"
+    act "(dry-run) unzip ${white2}$zip${xx} -> ${white2}$out${xx}"
+    act "(dry-run) then remove ${white2}$zip${xx}"
     return 0
   fi
   mkdir -p "$out"; unzip -oq "$zip" -d "$out"
@@ -163,7 +182,6 @@ do_unzip(){
 }
 
 # ---------- ignore logic ----------
-# built-ins (ADS/Windows/Apple litter)
 is_ads_builtin(){
   local b="$(basename "$1")"
   [[ "$b" == *:Zone.Identifier* ]] && return 0
@@ -177,7 +195,6 @@ is_ads_builtin(){
 is_user_ignored(){
   local b="$(basename "$1")" g
   for g in "${IGNORE_GLOBS[@]:-}"; do
-    # trim spaces
     g="${g##+([[:space:]])}"; g="${g%%+([[:space:]])}"
     [ -z "$g" ] && continue
     [[ "$b" == $g ]] && return 0
@@ -234,7 +251,7 @@ match_items(){
   for x in "${m[@]:-}"; do
     local full="$SRC_DIR/$x"
     is_drop_root "$full" && continue
-    is_ignored "$full" && { dlog "Ignoring by glob/builtin: $(basename "$full")"; continue; }
+    if is_ignored "$full"; then trace "Ignoring by glob/builtin: $(basename "$full")"; continue; fi
     out+=( "$full" )
   done
   printf '%s\n' "${out[@]:-}"
@@ -277,15 +294,14 @@ process_once(){
   local mf
   mapfile -t MANIFS < <(collect_manifests)
   if [ "${#MANIFS[@]}" -eq 0 ]; then
-    dlog "No manifest found (drop-folder empty and none provided)."
+    trace "No manifest found (drop-folder empty and none provided)."
     report_untracked
     return 0
   fi
 
-  if [ "$DEBUG_MODE" -eq 1 ]; then
-    echo "${grey}[${xx}$(ts)${grey}]${xx} ${purple}Manifests:${xx}"
-    for mf in "${MANIFS[@]}"; do echo "  ${grey}-${xx} ${white2}$mf${xx}"; done
-  fi
+  # Show manifest list at each run (short, non-spammy)
+  _log "${purple}Manifests:${xx}"
+  for mf in "${MANIFS[@]}"; do _log "  ${grey}-${xx} ${white2}$mf${xx}"; done
 
   local LINE pattern alias dest flags destx MODE EXTRACT SAFE CONFIRM
   for mf in "${MANIFS[@]}"; do
@@ -300,7 +316,7 @@ process_once(){
       pattern="${pattern%$'\r'}"; alias="${alias%$'\r'}"; dest="${dest%$'\r'}"; flags="${flags%$'\r'}"
 
       if [ -z "$pattern" ] || [ -z "$alias" ] || [ -z "$dest" ]; then
-        dlog "Skipping malformed line: ${white2}$LINE${xx}"
+        trace "Skipping malformed line: ${white2}$LINE${xx}"
         continue
       fi
       if [ "$pattern" = "." ] || [ "$pattern" = "./" ]; then
@@ -319,22 +335,22 @@ process_once(){
             extract) EXTRACT="$v";;
             safe) SAFE="$v";;
             confirm) CONFIRM="$v";;
-            *) dlog "Unknown flag '${white2}$k${xx}' ignored." ;;
+            *) trace "Unknown flag '${white2}$k${xx}' ignored." ;;
           esac
         done < <(parse_flags "$flags")
       fi
 
       mapfile -t matches < <(match_items "$pattern")
-      [ "${#matches[@]}" -eq 0 ] && { dlog "No matches for '${white2}$pattern${xx}'"; continue; }
+      [ "${#matches[@]}" -eq 0 ] && { trace "No matches for '${white2}$pattern${xx}'"; continue; }
 
       declare -A rule_dest_map=()
       declare -A rule_src_for_dest=()
       colliding=0
 
       for src in "${matches[@]}"; do
-        if [ -z "${src:-}" ]; then dlog "Empty src for pattern '${white2}$pattern${xx}' — skipping this match."; continue; fi
+        [ -z "${src:-}" ] && { trace "Empty src for pattern '${white2}$pattern${xx}' — skipping"; continue; }
         if is_drop_root "$src"; then warn "Refusing to act on drop root: ${white2}$src${xx}"; continue; fi
-        if is_ignored "$src"; then dlog "Ignoring by glob/builtin: ${white2}$(basename "$src")${xx}"; continue; fi
+        if is_ignored "$src"; then trace "Ignoring by glob/builtin: ${white2}$(basename "$src")${xx}"; continue; fi
 
         if [ -f "$src" ]; then
           base="${src##*/}"; ext="${base##*.}"
@@ -344,14 +360,9 @@ process_once(){
             dst_path="$(dest_path_for_file "$src" "$destx" "$alias")"
           fi
         elif [ -d "$src" ]; then
-          if [ "$alias" = "self" ]; then
-            dst_path="$destx/"
-          else
-            dst_path="$(dest_path_for_dir "$src" "$destx" "$alias")"
-          fi
+          if [ "$alias" = "self" ]; then dst_path="$destx/"; else dst_path="$(dest_path_for_dir "$src" "$destx" "$alias")"; fi
         else
-          dlog "Skipping unknown type: ${white2}$src${xx}"
-          continue
+          trace "Skipping unknown type: ${white2}$src${xx}"; continue
         fi
 
         key="$dst_path"
@@ -359,8 +370,8 @@ process_once(){
           colliding=1
           prev="${rule_src_for_dest[$key]}"
           err "Collision in rule -> dest ${white2}$key${xx} from:"
-          echo "  ${grey}- ${white2}$prev${xx}"
-          echo "  ${grey}- ${white2}$src${xx}"
+          _log "  ${grey}- ${white2}$prev${xx}"
+          _log "  ${grey}- ${white2}$src${xx}"
         else
           rule_dest_map["$key"]=1
           rule_src_for_dest["$key"]="$src"
@@ -369,7 +380,7 @@ process_once(){
 
       for key in "${!rule_dest_map[@]}"; do
         src="${rule_src_for_dest[$key]}"
-        if [ -z "${src:-}" ]; then continue; fi
+        [ -z "${src:-}" ] && continue
         dst_path="$key"
         _touched["$src"]=1 || true
 
@@ -379,18 +390,18 @@ process_once(){
         if [ -f "$src" ]; then
           base="${src##*/}"; ext="${base##*.}"
           if [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ]; then
-            note "Extract: ${white2}$src${xx} -> ${white2}$dst_path${xx}"
+            act "Extract: ${white2}$src${xx} -> ${white2}$dst_path${xx}"
             do_unzip "$src" "$dst_path"
           else
-            note "Transfer (${blue2}$MODE${xx}): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
+            act "Transfer ($MODE): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
             do_transfer "$src" "$dst_path" "$MODE"
           fi
         elif [ -d "$src" ]; then
           if [ "$alias" = "self" ]; then
-            note "Transfer dir (${blue2}$MODE${xx}): ${white2}$src${xx} -> ${white2}$destx/${xx}"
+            act "Transfer dir ($MODE): ${white2}$src${xx} -> ${white2}$destx/${xx}"
             do_transfer "$src" "$destx" "$MODE"
           else
-            note "Transfer dir (${blue2}$MODE${xx}): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
+            act "Transfer dir ($MODE): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
             do_transfer "$src" "$dst_path" "$MODE"
           fi
         fi
@@ -419,12 +430,12 @@ report_untracked(){
     [[ "$item" == . || "$item" == .. ]] && continue
     is_ignored "$full" && continue
     if [[ -z "${_touched[$full]:-}" ]]; then
-      log "Untracked in drop: ${white2}$full${xx} ${grey}(no matching rule)${xx}"
+      trace "Untracked in drop: ${white2}$full${xx} (no matching rule)"
     fi
   done
 }
 
-# ---------- signatures (same as v4) ----------
+# ---------- signatures (same as v4 base) ----------
 drop_signature(){
   local saved
   saved="$(pwd)"
@@ -451,10 +462,13 @@ manifest_signature(){
 LAST_DROP_SIG="$(drop_signature || true)"
 LAST_MANIF_SIG="$(manifest_signature || true)"
 
+# Startup banner (always)
+_log "${purple}dropx v10 (fx)${xx}  Mode=${white2}$LOG_LEVEL${xx}  SRC_DIR=${white2}$SRC_DIR${xx}  POLL=${white2}${POLL_SEC}s${xx}  CONF=${white2}$CONF${xx}"
+
 process_once || true
 [ "$ONCE" -eq 1 ] && exit 0
 
-echo "${grey}[${xx}$(ts)${grey}]${xx} ${purple}WSL-friendly watch${xx} ${white2}$SRC_DIR${xx} ${grey}(signature every ${POLL_SEC}s). Ctrl-C to stop.${xx}"
+_log "${purple}WSL-friendly watch${xx} ${white2}$SRC_DIR${xx} ${grey}(signature every ${POLL_SEC}s). Ctrl-C to stop.${xx}"
 while sleep "$POLL_SEC"; do
   CUR_DROP_SIG="$(drop_signature || true)"
   CUR_MANIF_SIG="$(manifest_signature || true)"
