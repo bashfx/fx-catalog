@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# dropx v12 (fx): 3-tier logging + per-entry dryrun + confirm behavior + zipmerge
-# Modes:
-#   QUIET (default): banner + manifests + warnings/errors
-#   INFO  (DROPX_VERBOSE=1): + transfers/extracts + git actions + collisions
-#   DEBUG (DEBUG_MODE=0): full trace
+# dropx v14 (fx): zipmerge fix + visible logs
+# Includes: 3-tier logging, per-rule dryrun, confirm (foreground only), zipmerge (temp + merge),
+# dynamic poll override via ~/.droprc (CURSOR_POLL_SEC), and HUP/USR1 "check now".
 
 set -euo pipefail
 
@@ -163,10 +161,10 @@ do_transfer(){
 do_unzip(){
   local zip="$1" out="$2" eff_dry="$3"
   if [ "$eff_dry" -eq 1 ]; then
-    act "(dry-run) unzip ${white2}$zip${xx} -> ${white2}$out${xx}"
-    act "(dry-run) then remove ${white2}$zip${xx}"
+    _log "Extract (dry-run): ${white2}$zip${xx} -> ${white2}$out${xx}"
     return 0
   fi
+  _log "Extract: ${white2}$zip${xx} -> ${white2}$out${xx}"
   mkdir -p "$out"; unzip -oq "$zip" -d "$out"
   ok "Extracted: ${white2}$zip${xx} -> ${white2}$out${xx}"
   rm -f "$zip"
@@ -175,18 +173,22 @@ do_unzip(){
 do_zip_merge(){
   local zip="$1" target_dir="$2" eff_dry="$3"
   if [ "$eff_dry" -eq 1 ]; then
-    act "(dry-run) zipmerge ${white2}$zip${xx} -> ${white2}$target_dir${xx} (overwrite into existing)"
+    _log "Zip-merge (dry-run): ${white2}$zip${xx} -> ${white2}$target_dir${xx} (add+overwrite)"
     return 0
   fi
+  _log "Zip-merge: ${white2}$zip${xx} -> ${white2}$target_dir${xx} (add+overwrite)"
   mkdir -p "$target_dir"
-  local tmp
+  local tmp count=0
   tmp="$(mktemp -d)"
+  # Clean tmp when this function returns
   trap 'rm -rf "$tmp"' RETURN
   unzip -oq "$zip" -d "$tmp"
-  # Merge contents into target (overwrite matching files, keep others)
-  # Use cp -a to avoid rsync dependency
+  # Count extracted files
+  if command -v find >/dev/null 2>&1; then
+    count="$(find "$tmp" -type f | wc -l | tr -d ' ')"
+  fi
   cp -a "$tmp"/. "$target_dir"/
-  ok "Zip merge: ${white2}$zip${xx} -> ${white2}$target_dir${xx}"
+  ok "Zip-merged ${white2}$count${xx} files into ${white2}$target_dir${xx}"
   rm -f "$zip"
 }
 
@@ -284,6 +286,16 @@ manifest_signature(){
   done | sort
 }
 
+read_cursor_poll(){
+  local v=""
+  [ -f "$CURSOR_FILE" ] && v="$(grep -E '^CURSOR_POLL_SEC=' "$CURSOR_FILE" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '\"[:space:]')"
+  [[ "$v" =~ ^[0-9]+$ ]] && echo "$v" || echo ""
+}
+
+kick_now=0
+on_hup(){ kick_now=1; }
+trap on_hup HUP USR1
+
 drop_signature(){
   local saved
   saved="$(pwd)"
@@ -360,25 +372,23 @@ process_once(){
       for src in "${matches[@]}"; do
         [ -z "${src:-}" ] && { trace "Empty src for pattern '${white2}$pattern${xx}' — skipping"; continue; }
         if is_drop_root "$src"; then warn "Refusing to act on drop root: ${white2}$src${xx}"; continue; fi
-        if is_ignored "$src"; then trace "Ignoring by glob/builtin: ${white2}$(basename "$src")${xx}"; continue; fi
+        if is_ignored "$src"; then trace "Ignoring by glob/builtin: ${white2}$(basename "$src")"; continue; fi
 
         if [ -f "$src" ]; then
-          base="${src##*/}"; ext="${base##*.}"
-          if [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ] && [ "${ZIPMERGE,,}" = "true" ]; then
-            # zipmerge target dir: alias as directory name (or zip base if self)
-            if [ "$alias" = "self" ]; then
-              name="${base%.*}"
+          base="${src##*/}"; ext="${base##*.}"; ext_l="${ext,,}"
+          if [ "$ext_l" = "zip" ] && { [ "${ZIPMERGE,,}" = "true" ] || [ "$EXTRACT" = "true" ]; }; then
+            if [ "${ZIPMERGE,,}" = "true" ]; then
+              if [ "$alias" = "self" ]; then name="${base%.*}"; else name="$alias"; fi
+              dst_path="${destx%/}/$name"; op="zipmerge"
             else
-              name="$alias"
+              dst_path="$(extract_dir_for_zip "$src" "$destx" "$alias")"; op="extract"
             fi
-            dst_path="${destx%/}/$name"
-          elif [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ]; then
-            dst_path="$(extract_dir_for_zip "$src" "$destx" "$alias")"
           else
-            dst_path="$(dest_path_for_file "$src" "$destx" "$alias")"
+            dst_path="$(dest_path_for_file "$src" "$destx" "$alias")"; op="transfer"
           fi
         elif [ -d "$src" ]; then
           if [ "$alias" = "self" ]; then dst_path="$destx/"; else dst_path="$(dest_path_for_dir "$src" "$destx" "$alias")"; fi
+          op="transfer_dir"
         else
           trace "Skipping unknown type: ${white2}$src${xx}"; continue
         fi
@@ -394,25 +404,26 @@ process_once(){
           rule_dest_map["$key"]=1
           rule_src_for_dest["$key"]="$src"
         fi
+        declare -gA _op_for_dest 2>/dev/null || true
+        _op_for_dest["$key"]="$op"
       done
 
       for key in "${!rule_dest_map[@]}"; do
         src="${rule_src_for_dest[$key]}"
         [ -z "${src:-}" ] && continue
         dst_path="$key"
+        op="${_op_for_dest[$key]:-transfer}"
         _touched["$src"]=1 || true
 
-        # Effective dry-run: flag overrides global
         eff_dry="$DRYRUN"
         case "${DRY_POLICY,,}" in
           true|1|yes|on) eff_dry=1 ;;
           false|0|no|off) eff_dry=0 ;;
         esac
 
-        # Enforce confirm
         if [ "${CONFIRM,,}" = "true" ]; then
           if [ -t 0 ]; then
-            read -rp "Confirm ${MODE} of $(basename "$src") to $dst_path ? [y/N] " ans
+            read -rp "Confirm ${op} of $(basename "$src") to $dst_path ? [y/N] " ans
             if [[ ! "$ans" =~ ^[Yy]$ ]]; then
               warn "User declined confirm; skipping ${white2}$src${xx}"
               continue
@@ -426,18 +437,13 @@ process_once(){
         repo="$(git_root_for "$destx")"; [ -n "$repo" ] && ensure_git_safe "$repo" "$SAFE" "$eff_dry"
         mkdir -p "$destx"
 
-        if [ -f "$src" ]; then
-          base="${src##*/}"; ext="${base##*.}"
-          if [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ] && [ "${ZIPMERGE,,}" = "true" ]; then
-            act "Zip-merge: ${white2}$src${xx} -> ${white2}$dst_path${xx}"
-            do_zip_merge "$src" "$dst_path" "$eff_dry"
-          elif [ "${ext,,}" = "zip" ] && [ "$EXTRACT" = "true" ]; then
-            act "Extract: ${white2}$src${xx} -> ${white2}$dst_path${xx}"
-            do_unzip "$src" "$dst_path" "$eff_dry"
-          else
-            act "Transfer ($MODE): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
-            do_transfer "$src" "$dst_path" "$MODE" "$eff_dry"
-          fi
+        if [ "$op" = "zipmerge" ]; then
+          do_zip_merge "$src" "$dst_path" "$eff_dry"
+        elif [ "$op" = "extract" ]; then
+          do_unzip "$src" "$dst_path" "$eff_dry"
+        elif [ -f "$src" ]; then
+          act "Transfer ($MODE): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
+          do_transfer "$src" "$dst_path" "$MODE" "$eff_dry"
         elif [ -d "$src" ]; then
           if [ "$alias" = "self" ]; then
             act "Transfer dir ($MODE): ${white2}$src${xx} -> ${white2}$destx/${xx}"
@@ -453,7 +459,7 @@ process_once(){
         err "One or more destinations collided for pattern '${white2}$pattern${xx}'. Non-colliding items were processed; colliding ones were skipped."
       fi
 
-      unset rule_dest_map rule_src_for_dest colliding key src dst_path prev base ext eff_dry name
+      unset rule_dest_map rule_src_for_dest colliding key src dst_path prev base ext eff_dry op name
     done < "$mf"
   done
 
@@ -505,13 +511,26 @@ LAST_DROP_SIG="$(drop_signature || true)"
 LAST_MANIF_SIG="$(manifest_signature || true)"
 
 # Startup banner (always)
-_log "${purple}dropx v12 (fx)${xx}  Mode=${white2}$LOG_LEVEL${xx}  SRC_DIR=${white2}$SRC_DIR${xx}  POLL=${white2}${POLL_SEC}s${xx}  CONF=${white2}$CONF${xx}"
+_log "${purple}dropx v14 (fx)${xx}  Mode=${white2}$LOG_LEVEL${xx}  SRC_DIR=${white2}$SRC_DIR${xx}  POLL=${white2}${POLL_SEC}s${xx}  CONF=${white2}$CONF${xx}"
 
 process_once || true
 [ "$ONCE" -eq 1 ] && exit 0
 
 _log "${purple}WSL-friendly watch${xx} ${white2}$SRC_DIR${xx} ${grey}(signature every ${POLL_SEC}s). Ctrl-C to stop.${xx}"
-while sleep "$POLL_SEC"; do
+while :; do
+  # dynamic override every loop
+  CUR_OVERRIDE="$(read_cursor_poll)"
+  SLEEP_SECS="${CUR_OVERRIDE:-$POLL_SEC}"
+  sleep "$SLEEP_SECS"
+
+  if [ "$kick_now" -eq 1 ]; then
+    kick_now=0
+    process_once || true
+    LAST_DROP_SIG="$(drop_signature || true)"
+    LAST_MANIF_SIG="$(manifest_signature || true)"
+    continue
+  fi
+
   CUR_DROP_SIG="$(drop_signature || true)"
   CUR_MANIF_SIG="$(manifest_signature || true)"
   if [ "$CUR_DROP_SIG" != "$LAST_DROP_SIG" ] || [ "$CUR_MANIF_SIG" != "$LAST_MANIF_SIG" ]; then
