@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# dropx v9 (fx namespace): watch-restore + ignores + config
-# Paths:
-#   CONF default:   $HOME/.local/etc/fx/drop.conf
-#   LOG dir:        $HOME/.local/var/fx
-#   RUN dir:        $HOME/.local/run/fx
-#   Cursor file:    $HOME/.fx/droprc  (fallback: $HOME/.droprc)
-# Behavior:
-#   - DEBUG_MODE default=1 (quiet). Set DEBUG_MODE=0 for verbose debug lines.
-#   - Git auto-commit output is visible in log (no redirection to /dev/null).
-#   - Polling detector (v4 baseline) + collision-aware multi-glob + ignore globs.
+# dropx v7 (fx-min): last-known-working logic with fx paths + debug default + visible git output
+# Changes vs your working v7:
+#   - Uses ~/.local/etc/fx, ~/.local/var/fx, ~/.local/run/fx
+#   - CONF default: ~/.local/etc/fx/drop.conf
+#   - DEBUG_MODE default 1 (quiet). Set DEBUG_MODE=0 for verbose.
+#   - Git auto-commit output is shown in log (no >/dev/null)
+# Everything else remains identical to your working v7.
 
 set -euo pipefail
 
@@ -35,16 +32,15 @@ readonly grey2=$'\x1B[38;5;240m'
 readonly grey3=$'\x1B[38;5;237m'
 readonly xx=$'\x1B[0m'
 
-# ---------- debug (1 = quiet, 0 = verbose) ----------
+# Note: 1 = quiet, 0 = verbose
 DEBUG_MODE="${DEBUG_MODE:-1}"
-
 ts(){ date +'%F %T'; }
 log()   { echo "${grey}[$(ts)]${xx} ${grey}$*${xx}"; }
 ok()    { echo "${grey}[$(ts)]${xx} ${green}$*${xx}"; }
 note()  { echo "${grey}[$(ts)]${xx} ${blue}$*${xx}"; }
 warn()  { echo "${grey}[$(ts)]${xx} ${yellow}$*${xx}"; }
 err()   { echo "${grey}[$(ts)]${xx} ${red}$*${xx}"; }
-dlog()  { [ "${DEBUG_MODE}" -eq 0 ] && log "$@"; }
+dlog()  { [ "$DEBUG_MODE" -eq 0 ] && log "$@"; }
 
 # ---------- bootstrap ----------
 mkdir -p "$HOME/.local/etc/fx" "$HOME/.local/var/fx" "$HOME/.local/run/fx"
@@ -53,8 +49,7 @@ mkdir -p "$HOME/.local/etc/fx" "$HOME/.local/var/fx" "$HOME/.local/run/fx"
 CONF="${DROPX_CONF:-$HOME/.local/etc/fx/drop.conf}"
 [ -f "$CONF" ] && . "$CONF" || true
 
-CURSOR_FILE="$HOME/.fx/droprc"
-[ -f "$CURSOR_FILE" ] || CURSOR_FILE="$HOME/.droprc"
+CURSOR_FILE="$HOME/.droprc"
 [ -f "$CURSOR_FILE" ] && . "$CURSOR_FILE" || true
 
 DRYRUN=0
@@ -95,8 +90,7 @@ if [ -n "${MANIFEST:-}" ] && [ ! -f "$MANIFEST" ]; then
   MANIFEST=""
 fi
 
-# ---------- save cursor ----------
-mkdir -p "$(dirname "$CURSOR_FILE")" 2>/dev/null || true
+mkdir -p "$(dirname "$CURSOR_FILE")"
 cat > "$CURSOR_FILE" <<EOF
 CURSOR_SRC_DIR="$(printf '%s' "$SRC_DIR")"
 CURSOR_MANIFEST="$(printf '%s' "${MANIFEST:-}")"
@@ -115,7 +109,7 @@ ensure_git_safe(){
     case "$policy" in
       auto)
         local msg="fix: auto sync save $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-        note "Repo dirty at ${white2}$repo${xx} — auto committing."
+        note "Repo dirty at ${white2}$repo${xx} — ${cyan}auto committing${xx}."
         if [ "$DRYRUN" -eq 1 ]; then
           dlog "(dry-run) would run: git -C \"$repo\" add -A && git -C \"$repo\" commit -m \"$msg\""
         else
@@ -142,7 +136,7 @@ ensure_git_safe(){
 do_transfer(){
   local src="$1" dst="$2" mode="$3"
   if [ "$DRYRUN" -eq 1 ]; then
-    note "(dry-run) $mode ${white2}$src${xx} -> ${white2}$dst${xx}"
+    note "(dry-run) ${blue2}$mode${xx} ${white2}$src${xx} -> ${white2}$dst${xx}"
     note "(dry-run) then remove ${white2}$src${xx}"
     return 0
   fi
@@ -152,7 +146,7 @@ do_transfer(){
     ok "Copied: ${white2}$src${xx} -> ${white2}$dst${xx} (source removed)"
     rm -rf "$src"
   else
-    if [ -d "$src" ] && [ -d "$dst" ]; then
+    if [ -d "$src" ] && [ -d "$dst" ] ; then
       mv -f "$src" "$dst/"
       ok "Moved: ${white2}$src${xx} -> ${white2}$dst/${xx}"
     else
@@ -165,7 +159,7 @@ do_transfer(){
 do_unzip(){
   local zip="$1" out="$2"
   if [ "$DRYRUN" -eq 1 ]; then
-    note "(dry-run) unzip ${white2}$zip${xx} -> ${white2}$out${xx}"
+    note "(dry-run) ${cyan}unzip${xx} ${white2}$zip${xx} -> ${white2}$out${xx}"
     note "(dry-run) then remove ${white2}$zip${xx}"
     return 0
   fi
@@ -255,7 +249,7 @@ collect_manifests(){
   mapfile -t dm < <(find "$SRC_DIR" -maxdepth 1 -type f -iname '*manifest.rc' -printf '%f\n' | sort)
   for f in "${dm[@]}"; do out+=( "$SRC_DIR/$f" ); done
   if [ -n "${MANIFEST:-}" ] && [ -f "$MANIFEST" ]; then out+=( "$MANIFEST" ); fi
-  printf '%s\n' "${out[@]}"
+  printf '%s\n' "${out[@]:-}"
 }
 
 manifest_signature(){
@@ -292,9 +286,10 @@ process_once(){
     return 0
   fi
 
-  # Always print a concise banner so you can see we parsed manifests
-  echo "${grey}[${xx}$(ts)${grey}]${xx} ${purple}Manifests:${xx}"
-  for mf in "${MANIFS[@]}"; do echo "  ${grey}-${xx} ${white2}$mf${xx}"; done
+  if [ "$DEBUG_MODE" -eq 0 ]; then
+    echo "${grey}[${xx}$(ts)${grey}]${xx} ${purple}Manifests:${xx}"
+    for mf in "${MANIFS[@]}"; do echo "  ${grey}-${xx} ${white2}$mf${xx}"; done
+  fi
 
   local LINE pattern alias dest flags destx MODE EXTRACT SAFE CONFIRM
   for mf in "${MANIFS[@]}"; do
@@ -391,15 +386,15 @@ process_once(){
             note "Extract: ${white2}$src${xx} -> ${white2}$dst_path${xx}"
             do_unzip "$src" "$dst_path"
           else
-            note "Transfer ($MODE): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
+            note "Transfer (${blue2}$MODE${xx}): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
             do_transfer "$src" "$dst_path" "$MODE"
           fi
         elif [ -d "$src" ]; then
           if [ "$alias" = "self" ]; then
-            note "Transfer dir ($MODE): ${white2}$src${xx} -> ${white2}$destx/${xx}"
+            note "Transfer dir (${blue2}$MODE${xx}): ${white2}$src${xx} -> ${white2}$destx/${xx}"
             do_transfer "$src" "$destx" "$MODE"
           else
-            note "Transfer dir ($MODE): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
+            note "Transfer dir (${blue2}$MODE${xx}): ${white2}$src${xx} -> ${white2}$dst_path${xx}"
             do_transfer "$src" "$dst_path" "$MODE"
           fi
         fi
@@ -428,12 +423,12 @@ report_untracked(){
     [[ "$item" == . || "$item" == .. ]] && continue
     is_ignored "$full" && continue
     if [[ -z "${_touched[$full]:-}" ]]; then
-      log "Untracked in drop: ${white2}$full${xx} (no matching rule)"
+      log "Untracked in drop: ${white2}$full${xx} ${grey}(no matching rule)${xx}"
     fi
   done
 }
 
-# ---------- signatures ----------
+# ---------- signatures (same as v4) ----------
 drop_signature(){
   local saved
   saved="$(pwd)"
@@ -460,14 +455,10 @@ manifest_signature(){
 LAST_DROP_SIG="$(drop_signature || true)"
 LAST_MANIF_SIG="$(manifest_signature || true)"
 
-# Startup banner (always)
-echo "${grey}[${xx}$(ts)${grey}]${xx} ${purple}dropx v9 (fx)${xx}  SRC_DIR=${white2}$SRC_DIR${xx}  POLL=${white2}${POLL_SEC}s${xx}  CONF=${white2}$CONF${xx}  DEBUG_MODE=${white2}$DEBUG_MODE${xx}"
-
-# Initial pass
 process_once || true
 [ "$ONCE" -eq 1 ] && exit 0
 
-echo "${grey}[${xx}$(ts)${grey}]${xx} ${purple}WSL-friendly watch${xx} ${white2}$SRC_DIR${xx} ${grey}(signature every ${POLL_SEC}s). Ctrl-C to stop.${xx}"
+echo "${grey}[${xx}$(ts)]${xx} ${purple}WSL-friendly watch${xx} ${white2}$SRC_DIR${xx} ${grey}(signature every ${POLL_SEC}s). Ctrl-C to stop.${xx}"
 while sleep "$POLL_SEC"; do
   CUR_DROP_SIG="$(drop_signature || true)"
   CUR_MANIF_SIG="$(manifest_signature || true)"
