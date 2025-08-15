@@ -180,15 +180,13 @@ do_zip_merge(){
   mkdir -p "$target_dir"
   local tmp count=0
   tmp="$(mktemp -d)"
-  # Clean tmp when this function returns
-  trap 'rm -rf "$tmp"' RETURN
   unzip -oq "$zip" -d "$tmp"
-  # Count extracted files
   if command -v find >/dev/null 2>&1; then
     count="$(find "$tmp" -type f | wc -l | tr -d ' ')"
   fi
   cp -a "$tmp"/. "$target_dir"/
   ok "Zip-merged ${white2}$count${xx} files into ${white2}$target_dir${xx}"
+  rm -rf "$tmp"
   rm -f "$zip"
 }
 
