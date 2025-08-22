@@ -52,8 +52,6 @@ if ! _index=$(is_lib_registered "LIB_STDERR"); then
   __log() {
     local type=$1 text=$2 force=$3 stream=2;
     case "$type" in
-      (qa)    [[ -n "$TEST_MODE" ]]                  && __printx "$text\n" "grey"   "$darr "   $stream ;;
-      dev)   [[ $opt_dev -eq 0 ]]                   && __printx "$text\n" "red2"   "$boto "   $stream ;;
       warn)  [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "orange" "$delta "  $stream ;;
       okay)  [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "green"  "$pass "   $stream ;;
       info)  [[ $force -eq 0 || $opt_debug -eq 0 ]] && __printx "$text\n" "blue"   "$lambda " $stream ;;

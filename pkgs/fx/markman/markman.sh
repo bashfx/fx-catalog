@@ -32,32 +32,32 @@
     return 1;
   }
 
-  if _is_dir "$FX_INC_DIR"; then
-    _inc="$FX_INC_DIR";
-    _app="$FX_APP_DIR";
-  elif _is_dir "$FXI_INC_DIR"; then
-    _inc="$FXI_INC_DIR";
-    _app="$FXI_APP_DIR";
-  else 
-    printf "[ENV]. Cant locate [include] ($_inc). Fatal.\n";
-    exit 1;
-  fi
+  # if _is_dir "$FX_INC_DIR"; then
+  #   _inc="$FX_INC_DIR";
+  #   _app="$FX_APP_DIR";
+  # elif _is_dir "$FXI_INC_DIR"; then
+  #   _inc="$FXI_INC_DIR";
+  #   _app="$FXI_APP_DIR";
+  # else 
+  #   printf "[ENV]. Cant locate [include] ($_inc). Fatal.\n";
+  #   exit 1;
+  # fi
 
 #-------------------------------------------------------------------------------
 # Core Libraries
 #-------------------------------------------------------------------------------
 
-  source "$_inc/base.sh"; 
+  # source "$_inc/base.sh"; 
 
-  if is_base_ready; then
-    fx_smart_source stdfx    || exit 1;
-    fx_smart_source stdutils || exit 1;
-    fx_smart_source stdfx    || exit 1;
-    fx_smart_source stderr   || exit 1;
-  else
-    error "Problem loading core libaries";
-    exit 1;
-  fi
+  # if is_base_ready; then
+  #   fx_smart_source stdfx    || exit 1;
+  #   fx_smart_source stdutils || exit 1;
+  #   fx_smart_source stdfx    || exit 1;
+  #   fx_smart_source stderr   || exit 1;
+  # else
+  #   error "Problem loading core libaries";
+  #   exit 1;
+  # fi
 
 #-------------------------------------------------------------------------------
 # State Vars
