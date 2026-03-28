@@ -89,7 +89,7 @@
   idots="\xE2\x80\xA6"
   bolt="\xE2\x86\xAF"
   redo="\xE2\x86\xBB"
-  gly_py="\u264B︎" #♋︎
+  gly_py="\u264B︎" # ♋︎
   gly_on="\u2691" #⚐
   gly_off="\u2690" #⚐
 
