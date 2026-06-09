@@ -1,0 +1,34 @@
+[repo]
+uid = "repo_f5191ea696bb9f85bedd"
+id = "bashfx/fx-catalog"
+name = "fx-catalog"
+kind = "tool"
+lifecycle = "active"
+
+[[capabilities]]
+name = "file.inspect"
+module = "bin/driver"
+class = "tool"
+tags = ["test-driver", "catalog", "bashfx", "scripts"]
+stability = "working"
+
+[[capabilities]]
+name = "config.resolve"
+module = "bin/engfx"
+class = "tool"
+tags = ["rules", "assertions", "setup", "bashfx", "env-include-required"]
+stability = "experimental"
+
+[[capabilities]]
+name = "process.manage"
+module = "bin/devfx"
+class = "adapter"
+tags = ["framework", "install", "link", "bashfx", "env-include-required"]
+stability = "experimental"
+
+[[capabilities]]
+name = "file.validate"
+module = "bin/pkgfx"
+class = "adapter"
+tags = ["package", "manifest", "integrity", "linker", "env-include-required"]
+stability = "experimental"
